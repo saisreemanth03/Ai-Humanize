@@ -83,6 +83,28 @@ main {
   margin: auto;
 }
 
+.nav-links-list {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.mobile-backdrop {
+  display: none;
+}
+
+.mobile-overlay-header {
+  display: none;
+}
+
+.mobile-overlay-close-btn {
+  display: none;
+}
+
+.mobile-cta-wrap {
+  display: none;
+}
+
 .nav-link {
   text-decoration: none;
   color: #77716b;
@@ -679,6 +701,14 @@ main {
   border-bottom: 1px solid #f0eae3;
 }
 
+.desktop-only-tabs {
+  display: flex;
+}
+
+.mobile-only-nav {
+  display: none;
+}
+
 /* --------------------------------------------------------------------------
    Interactive Web Dropzones (Desktop Drag-and-Drop)
    -------------------------------------------------------------------------- */
@@ -859,7 +889,8 @@ main {
 }
 
 .youtube-url-input::placeholder {
-  color: #b3aba2;
+  color: #635b54;
+  opacity: 1;
 }
 
 .fetch-btn {
@@ -1161,8 +1192,11 @@ main {
   background: transparent;
 }
 
-.studio-textarea::placeholder {
-  color: #b6afa8;
+.studio-textarea::placeholder,
+textarea::placeholder,
+input::placeholder {
+  color: #635b54;
+  opacity: 1;
 }
 
 /* Custom Earthen Scrollbars */
@@ -1190,22 +1224,27 @@ main {
 }
 
 .pane-foot {
-  border-top: 1px solid #f0ece7;
+  border-top: 1px solid #ebdcd0;
   padding: 10px 18px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 11px;
-  color: #a19a92;
-  min-height: 42px;
+  font-size: 11.5px;
+  color: #524a43;
+  font-weight: 500;
+  min-height: 44px;
   flex-wrap: wrap;
   gap: 8px;
   background: #faf7f3;
 }
 
+.pane-foot span {
+  color: #524a43;
+}
+
 .editable-hint {
-  color: #8d9d86;
-  font-weight: 500;
+  color: #44613d;
+  font-weight: 600;
 }
 
 .output-actions {
@@ -1219,9 +1258,9 @@ main {
   gap: 5px;
   border: 0;
   background: none;
-  color: #77716b;
+  color: #4a433d;
   font-size: 11.5px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   min-height: 36px;
   padding: 0 6px;
@@ -1903,13 +1942,75 @@ main {
 }
 
 /* ==========================================================================
-   Mobile & Tablet Responsiveness (Viewports <= 900px)
+   Desktop Navigation Enhancements (Viewports >= 768px)
+   Task 4: Clear boundary separating sticky header from active dual-pane studio
    ========================================================================== */
-@media (max-width: 900px) {
+@media (min-width: 768px) {
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(250, 247, 242, 0.96);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgba(185, 120, 96, 0.22);
+    box-shadow: 0 4px 18px -2px rgba(41, 37, 33, 0.05), 0 1px 3px rgba(41, 37, 33, 0.02);
+  }
+
+  .desktop-only-tabs {
+    display: flex !important;
+  }
+
+  .mobile-only-nav {
+    display: none !important;
+  }
+
+  .mobile-backdrop {
+    display: none !important;
+  }
+
+  .mobile-overlay-header {
+    display: none !important;
+  }
+
+  .mobile-overlay-close-btn {
+    display: none !important;
+  }
+
+  .mobile-cta-wrap {
+    display: none !important;
+  }
+}
+
+/* Animations for Mobile Navigation Overlay */
+@keyframes fadeInBackdrop {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideDownMenu {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ==========================================================================
+   Mobile Navigation & Studio Controls (Viewports < 768px)
+   Task 1: Mobile Hamburger Menu Overhaul (Touch >= 44px, centered, close 'X')
+   Task 2: Responsive Studio Segmented Control / Dropdown Selector (0 swiping)
+   ========================================================================== */
+@media (max-width: 767.98px) {
   /* Navigation & Mobile Hamburger */
   .nav {
-    height: 70px;
+    height: 68px;
     padding: 0 5%;
+    position: relative;
+    border-bottom: 1px solid #e8e0d7;
   }
 
   .nav-cta {
@@ -1921,63 +2022,308 @@ main {
   }
 
   .mobile-toggle {
-    display: flex;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    border-radius: 8px;
+    color: #292521;
+    background: #f3ede4;
+    border: 1px solid #ded5c8;
+    cursor: pointer;
+    transition: all 0.2s ease;
   }
 
-  /* Hamburger Dropdown Drawer */
+  .mobile-toggle:hover {
+    background: #e8ded2;
+    color: #b97860;
+  }
+
+  /* Mobile Backdrop Dimming */
+  .mobile-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(41, 37, 33, 0.45);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 998;
+    animation: fadeInBackdrop 0.2s ease-out;
+  }
+
+  /* Task 1: Mobile Navigation Full Overlay */
   .nav-links {
     display: none;
-    position: absolute;
-    top: 70px;
-    left: 0;
-    right: 0;
-    margin: 0;
-    background: #faf7f2;
-    padding: 16px 5% 20px;
-    border-bottom: 1px solid #e8e0d7;
-    box-shadow: 0 12px 30px rgba(41, 37, 33, 0.12);
-    flex-direction: column;
-    gap: 8px;
-    z-index: 100;
   }
 
   .nav-links.open {
     display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100vw;
+    height: 100vh;
+    max-height: 100vh;
+    background: rgba(250, 247, 242, 0.96);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    padding: 20px 24px 36px;
+    z-index: 999;
+    overflow-y: auto;
+    box-shadow: 0 20px 45px rgba(41, 37, 33, 0.18);
+    animation: slideDownMenu 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    margin: 0;
+    border: 0;
   }
 
-  .nav-links .nav-link {
+  .mobile-overlay-header {
     width: 100%;
-    min-height: 44px;
-    font-size: 14px;
-    padding: 10px 14px;
-    border-radius: 8px;
     display: flex;
     align-items: center;
+    justify-content: space-between;
+    padding-bottom: 16px;
+    margin-bottom: 28px;
+    border-bottom: 1px solid rgba(229, 219, 208, 0.85);
   }
 
-  .nav-links .nav-link.active {
-    background: #f2e8de;
+  .mobile-overlay-brand {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 19px;
+    font-weight: 700;
+    color: #292521;
+  }
+
+  /* Highly Visible 'X' Close Button in Top-Right Corner */
+  .mobile-overlay-close-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #dfd5c7;
+    border-radius: 50%;
+    background: #f1ebd7;
+    color: #292521;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(41, 37, 33, 0.08);
+    transition: all 0.2s ease;
+  }
+
+  .mobile-overlay-close-btn:hover,
+  .mobile-overlay-close-btn:focus-visible {
+    background: #e6ddce;
+    color: #b97860;
+    transform: scale(1.05);
+    outline: 2px solid #b97860;
+    outline-offset: 2px;
+  }
+
+  /* Center-aligned Navigation Links with >=44x44px Touch Targets */
+  .nav-links-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    max-width: 320px;
+    margin: 0 auto;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .nav-links-list .nav-link {
+    width: 100%;
+    min-height: 48px;
+    min-width: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-size: 16px;
+    font-weight: 600;
+    color: #49433e;
+    padding: 12px 18px;
+    border-radius: 12px;
+    text-decoration: none;
+    border: 1px solid transparent;
+    transition: all 0.2s ease;
+  }
+
+  .nav-links-list .nav-link:hover {
+    background: #f5ece2;
     color: #b97860;
   }
 
-  .nav-links .nav-link.active::after {
+  .nav-links-list .nav-link.active {
+    background: #f0e3d5;
+    color: #b97860;
+    font-weight: 700;
+    border-color: #e2d1c0;
+  }
+
+  .nav-links-list .nav-link.active::after {
     display: none;
   }
 
+  .mobile-cta-wrap {
+    width: 100%;
+    max-width: 320px;
+    margin: 24px auto 0;
+    display: flex;
+    justify-content: center;
+  }
+
   .mobile-cta-btn {
+    width: 100%;
+    min-height: 48px;
+    min-width: 44px;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
     background: #b97860;
     color: white;
-    border-radius: 8px;
-    min-height: 44px;
-    font-size: 13.5px;
+    border-radius: 12px;
+    font-size: 14.5px;
     font-weight: 600;
-    margin-top: 6px;
     text-decoration: none;
+    box-shadow: 0 4px 14px rgba(185, 120, 96, 0.25);
+    transition: all 0.2s ease;
   }
+
+  .mobile-cta-btn:hover {
+    background: #a9664e;
+    transform: translateY(-1px);
+  }
+
+  /* Task 2: Mobile Studio Navigation */
+  .desktop-only-tabs {
+    display: none !important;
+  }
+
+  .mobile-only-nav {
+    display: flex !important;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0 0 16px;
+  }
+
+  /* Compact Segmented Control with SVG Icons (Zero horizontal swiping) */
+  .studio-segmented-control {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    background: #f3ece4;
+    border: 1px solid #e4dacd;
+    border-radius: 12px;
+    padding: 5px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .segmented-pill {
+    min-height: 46px;
+    min-width: 44px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #5c544d;
+    text-decoration: none;
+    border-radius: 9px;
+    padding: 6px 2px;
+    text-align: center;
+    transition: all 0.2s ease;
+  }
+
+  .segmented-pill:hover {
+    background: rgba(255, 255, 255, 0.6);
+    color: #292521;
+  }
+
+  .segmented-pill.active {
+    background: #ffffff;
+    color: #b97860;
+    box-shadow: 0 2px 8px rgba(41, 37, 33, 0.08);
+    font-weight: 700;
+  }
+
+  .segmented-icon {
+    color: currentColor;
+    flex-shrink: 0;
+  }
+
+  .segmented-label {
+    font-size: 11px;
+    line-height: 1.2;
+  }
+
+  /* Responsive Dropdown Selector Box */
+  .studio-dropdown-selector-box {
+    position: relative;
+    display: flex;
+    align-items: center;
+    background: #ffffff;
+    border: 1px solid #dfd5c8;
+    border-radius: 10px;
+    min-height: 44px;
+    padding: 0 12px;
+    box-shadow: 0 1px 4px rgba(41, 37, 33, 0.03);
+  }
+
+  .dropdown-icon-lead {
+    position: absolute;
+    left: 14px;
+    color: #b97860;
+    display: flex;
+    align-items: center;
+    pointer-events: none;
+  }
+
+  .studio-dropdown-select {
+    width: 100%;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #292521;
+    min-height: 44px;
+    padding-left: 28px;
+    padding-right: 28px;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  .dropdown-chevron-tail {
+    position: absolute;
+    right: 14px;
+    color: #7a7168;
+    display: flex;
+    align-items: center;
+    pointer-events: none;
+  }
+}
+
+/* ==========================================================================
+   General Mobile & Tablet Responsiveness (Viewports <= 900px)
+   ========================================================================== */
+@media (max-width: 900px) {
 
   /* Hero Banner Responsive Typography */
   .hero {

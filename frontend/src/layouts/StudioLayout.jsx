@@ -1,9 +1,44 @@
-import { NavLink, Outlet } from 'react-router-dom';
-import { Feather, FileUp, Video, Youtube, ShieldCheck } from 'lucide-react';
+import { useLocation, useNavigate, NavLink, Outlet } from 'react-router-dom';
+import { Feather, FileUp, Video, Youtube, ShieldCheck, ChevronDown } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 
+const STUDIO_MODES = [
+  {
+    path: '/studio/text',
+    label: 'Write or paste text',
+    shortLabel: 'Text',
+    icon: Feather,
+  },
+  {
+    path: '/studio/document',
+    label: 'Upload document',
+    shortLabel: 'Document',
+    icon: FileUp,
+  },
+  {
+    path: '/studio/media',
+    label: 'Upload Audio / Video',
+    shortLabel: 'Media',
+    icon: Video,
+  },
+  {
+    path: '/studio/youtube',
+    label: 'YouTube Link',
+    shortLabel: 'YouTube',
+    icon: Youtube,
+  },
+];
+
 export default function StudioLayout() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Determine current active mode
+  const currentMode =
+    STUDIO_MODES.find((m) => location.pathname === m.path) || STUDIO_MODES[0];
+  const CurrentIcon = currentMode.icon;
+
   return (
     <div className="app studio-app">
       <Navbar />
@@ -21,33 +56,64 @@ export default function StudioLayout() {
             </span>
           </div>
 
-          {/* Persistent Studio Sub-Navigation Tabs */}
-          <nav className="workspace-tabs studio-mode-tabs" aria-label="Studio tools">
-            <NavLink
-              to="/studio/text"
-              className={({ isActive }) => (isActive ? 'active' : '')}
-            >
-              <Feather size={16} /> Write or paste text
-            </NavLink>
-            <NavLink
-              to="/studio/document"
-              className={({ isActive }) => (isActive ? 'active' : '')}
-            >
-              <FileUp size={16} /> Upload document
-            </NavLink>
-            <NavLink
-              to="/studio/media"
-              className={({ isActive }) => (isActive ? 'active' : '')}
-            >
-              <Video size={16} /> Upload Audio / Video
-            </NavLink>
-            <NavLink
-              to="/studio/youtube"
-              className={({ isActive }) => (isActive ? 'active' : '')}
-            >
-              <Youtube size={16} /> YouTube Link
-            </NavLink>
+          {/* Desktop Navigation Tabs (>= 768px Viewports) */}
+          <nav className="workspace-tabs studio-mode-tabs desktop-only-tabs" aria-label="Desktop Studio tools">
+            {STUDIO_MODES.map((mode) => {
+              const Icon = mode.icon;
+              return (
+                <NavLink
+                  key={mode.path}
+                  to={mode.path}
+                  className={({ isActive }) => (isActive ? 'active' : '')}
+                >
+                  <Icon size={16} /> {mode.label}
+                </NavLink>
+              );
+            })}
           </nav>
+
+          {/* Mobile Navigation Studio Switcher (< 768px Viewports): Compact Segmented Control with SVG Icons */}
+          <div className="studio-mobile-nav-wrap mobile-only-nav">
+            <nav className="studio-segmented-control" aria-label="Mobile Studio Navigation">
+              {STUDIO_MODES.map((mode) => {
+                const Icon = mode.icon;
+                const isActive = location.pathname === mode.path;
+                return (
+                  <NavLink
+                    key={mode.path}
+                    to={mode.path}
+                    className={`segmented-pill ${isActive ? 'active' : ''}`}
+                    aria-label={mode.label}
+                    title={mode.label}
+                  >
+                    <Icon size={17} className="segmented-icon" />
+                    <span className="segmented-label">{mode.shortLabel}</span>
+                  </NavLink>
+                );
+              })}
+            </nav>
+
+            {/* Mobile Dropdown Selector Alternative for accessibility */}
+            <div className="studio-dropdown-selector-box">
+              <span className="dropdown-icon-lead">
+                <CurrentIcon size={16} />
+              </span>
+              <select
+                id="mobile-studio-selector"
+                value={currentMode.path}
+                onChange={(e) => navigate(e.target.value)}
+                className="studio-dropdown-select"
+                aria-label="Select Studio Mode"
+              >
+                {STUDIO_MODES.map((mode) => (
+                  <option key={mode.path} value={mode.path}>
+                    Mode: {mode.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={15} className="dropdown-chevron-tail" />
+            </div>
+          </div>
 
           {/* Child Tool Route */}
           <Outlet />
