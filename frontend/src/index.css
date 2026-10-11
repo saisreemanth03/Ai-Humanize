@@ -1,2 +1,10 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap');
-:root{font-family:'DM Sans',sans-serif;color:#292521;background:#FAF7F2;font-synthesis:none;text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased;font-weight:400}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;min-width:320px}button,input,textarea,select{font:inherit}button,a{-webkit-tap-highlight-color:transparent}button:focus-visible,a:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-visible{outline:3px solid #c9917b;outline-offset:3px}a{color:inherit;text-decoration:none}::selection{background:#f1dfd2;color:#292521}
+:root{font-family:'DM Sans',sans-serif;color:#292521;background:#FAF7F2;font-synthesis:none;text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased;font-weight:400}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;overflow-x:hidden}
+body,#root{margin:0;min-width:320px;overflow-x:hidden;max-width:100%}
+button,input,textarea,select{font:inherit}
+button,a{-webkit-tap-highlight-color:transparent}
+button:focus-visible,a:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-visible{outline:2px solid #b97860;outline-offset:2px}
+a{color:inherit;text-decoration:none}
+::selection{background:#f1dfd2;color:#292521}
