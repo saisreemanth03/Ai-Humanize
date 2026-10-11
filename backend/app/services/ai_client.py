@@ -3,10 +3,13 @@ from typing import Optional, Tuple
 from openai import OpenAI
 
 def _normalize_gemini_model(model_name: Optional[str]) -> str:
-    valid_env = os.getenv("GEMINI_MODEL") or "gemini-2.5-flash"
-    if not model_name or model_name in ("gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-pro"):
+    valid_env = os.getenv("GEMINI_MODEL") or "gemini-3.1-flash-lite"
+    if not model_name:
         return valid_env
-    return model_name
+    model_lower = model_name.strip().lower()
+    if model_lower in ("gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-2.5-pro"):
+        return valid_env
+    return model_name.strip()
 
 def get_ai_client(
     custom_api_key: Optional[str] = None,
@@ -38,8 +41,16 @@ def get_ai_client(
                 max_retries=1
             ), model
 
-    # Env-based selection: prioritize Gemini if set
-    if env_gemini_key:
+    # Env-based selection: respect custom_provider if specified
+    if custom_provider == "openai" and env_openai_key:
+        model = custom_model or os.getenv("OPENAI_MODEL") or "gpt-4o-mini"
+        return OpenAI(
+            api_key=env_openai_key,
+            timeout=45,
+            max_retries=1
+        ), model
+
+    if env_gemini_key and (custom_provider != "openai"):
         model = _normalize_gemini_model(custom_model)
         return OpenAI(
             api_key=env_gemini_key,
