@@ -207,18 +207,28 @@ def get_yt_dlp_cookie_file() -> Optional[str]:
         return cookie_file
 
     cookie_text = os.environ.get("YOUTUBE_COOKIES_TEXT")
-    if cookie_text:
+    if cookie_text and cookie_text.strip():
         try:
+            raw = cookie_text.strip().strip("'\"")
+            # 1. Attempt base64 decode if encoded
             try:
-                decoded = base64.b64decode(cookie_text).decode("utf-8")
+                decoded = base64.b64decode(raw).decode("utf-8")
                 if "youtube" in decoded or "# Netscape" in decoded:
-                    cookie_text = decoded
+                    raw = decoded
             except Exception:
                 pass
 
+            # 2. Normalize escaped newlines if pasted into single-line env var
+            if "\\n" in raw and "\n" not in raw:
+                raw = raw.replace("\\n", "\n")
+
+            # 3. Ensure Netscape cookie file header is present
+            if not raw.startswith("# Netscape"):
+                raw = "# Netscape HTTP Cookie File\n" + raw
+
             target_path = os.path.join(tempfile.gettempdir(), "yt_cookies.txt")
             with open(target_path, "w", encoding="utf-8") as f:
-                f.write(cookie_text)
+                f.write(raw)
             return target_path
         except Exception:
             pass
