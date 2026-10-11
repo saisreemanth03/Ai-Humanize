@@ -1,8 +1,10 @@
 import os
 import re
+import json
 import tempfile
 import base64
 import subprocess
+import urllib.request
 from typing import Optional, Tuple
 from urllib.parse import urlparse, parse_qs
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -198,6 +200,117 @@ def extract_media_file(
         "warnings": warnings
     }
 
+def get_yt_dlp_cookie_file() -> Optional[str]:
+    """Retrieves or creates cookie file if specified in environment variables."""
+    cookie_file = os.environ.get("YOUTUBE_COOKIES_FILE")
+    if cookie_file and os.path.isfile(cookie_file):
+        return cookie_file
+
+    cookie_text = os.environ.get("YOUTUBE_COOKIES_TEXT")
+    if cookie_text:
+        try:
+            try:
+                decoded = base64.b64decode(cookie_text).decode("utf-8")
+                if "youtube" in decoded or "# Netscape" in decoded:
+                    cookie_text = decoded
+            except Exception:
+                pass
+
+            target_path = os.path.join(tempfile.gettempdir(), "yt_cookies.txt")
+            with open(target_path, "w", encoding="utf-8") as f:
+                f.write(cookie_text)
+            return target_path
+        except Exception:
+            pass
+    return None
+
+def build_ytdlp_opts(base_opts: dict) -> dict:
+    opts = dict(base_opts)
+    cookie_file = get_yt_dlp_cookie_file()
+    if cookie_file:
+        opts["cookiefile"] = cookie_file
+
+    proxy = os.environ.get("YOUTUBE_PROXY") or os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY")
+    if proxy:
+        opts["proxy"] = proxy
+
+    return opts
+
+def extract_captions_via_ytdlp(video_id: str) -> Optional[str]:
+    """
+    Extracts manual or auto-generated captions directly using yt-dlp metadata with mobile player clients.
+    Bypasses YouTube's bot detection on cloud/datacenter IP addresses.
+    """
+    ydl_opts = build_ytdlp_opts({
+        "skip_download": True,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "ios", "mweb", "tv", "web"]
+            }
+        },
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+    })
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+            captions = info.get("subtitles", {}) or {}
+            auto_captions = info.get("automatic_captions", {}) or {}
+
+            candidates = []
+            for d in [captions, auto_captions]:
+                for lang in ["en", "en-US", "en-GB"]:
+                    if lang in d:
+                        candidates.append(d[lang])
+                for k, v in d.items():
+                    if k.startswith("en"):
+                        candidates.append(v)
+                if not candidates and d:
+                    candidates.extend(d.values())
+
+            for formats in candidates:
+                # 1. Try json3 format
+                json3_entry = next((f for f in formats if f.get("ext") == "json3"), None)
+                if json3_entry and json3_entry.get("url"):
+                    try:
+                        req = urllib.request.Request(json3_entry["url"], headers={"User-Agent": "Mozilla/5.0"})
+                        with urllib.request.urlopen(req, timeout=10) as resp:
+                            data = json.loads(resp.read().decode("utf-8"))
+                            lines = []
+                            for ev in data.get("events", []):
+                                for seg in ev.get("segs", []):
+                                    t = seg.get("utf8", "").strip()
+                                    if t and t != "\n":
+                                        lines.append(t)
+                            text = " ".join(lines)
+                            if text.strip():
+                                return text.strip()
+                    except Exception:
+                        pass
+
+                # 2. Try vtt / srt / srv1 format
+                for ext in ["vtt", "srt", "srv1"]:
+                    entry = next((f for f in formats if f.get("ext") == ext), None)
+                    if entry and entry.get("url"):
+                        try:
+                            req = urllib.request.Request(entry["url"], headers={"User-Agent": "Mozilla/5.0"})
+                            with urllib.request.urlopen(req, timeout=10) as resp:
+                                content = resp.read().decode("utf-8")
+                                clean = re.sub(r"<[^>]+>", " ", content)
+                                clean = re.sub(r"WEBVTT.*?\n", "", clean)
+                                clean = re.sub(r"\d{2}:\d{2}:\d{2}\.\d+ --> \d{2}:\d{2}:\d{2}\.\d+", " ", clean)
+                                clean = re.sub(r"\d{2}:\d{2}\.\d+ --> \d{2}:\d{2}\.\d+", " ", clean)
+                                clean = re.sub(r"\b\d+\b", " ", clean)
+                                clean = " ".join(clean.split())
+                                if clean.strip():
+                                    return clean.strip()
+                        except Exception:
+                            pass
+    except Exception:
+        pass
+    return None
+
 def fetch_youtube_captions_or_fallback(
     url: str,
     api_key: Optional[str] = None,
@@ -207,7 +320,8 @@ def fetch_youtube_captions_or_fallback(
     """
     Extracts transcript from YouTube URL:
     1. Attempts to fetch official or auto-generated captions via youtube-transcript-api.
-    2. Fallback: Downloads audio stream via yt-dlp and transcribes using the AI transcription engine.
+    2. Fallback 1: Fetches captions/subtitles metadata via yt-dlp using mobile player clients (cloud-safe).
+    3. Fallback 2: Downloads audio stream via yt-dlp (with multi-client bypass) and transcribes using AI engine.
     """
     video_id = parse_youtube_video_id(url)
     if not video_id:
@@ -218,43 +332,105 @@ def fetch_youtube_captions_or_fallback(
     # 1. Attempt to fetch captions via youtube-transcript-api
     try:
         api = YouTubeTranscriptApi()
+        # Direct fetch for standard English variants
         try:
-            fetched = api.fetch(video_id)
+            fetched = api.fetch(video_id, languages=["en", "en-US", "en-GB"])
             raw = fetched.to_raw_data()
             text = " ".join(item.get("text", "") for item in raw if item.get("text"))
             if text.strip():
                 return video_id, text.strip(), warnings
         except Exception:
-            transcript_list = api.list(video_id)
-            transcript = transcript_list.find_transcript(["en", "en-US", "en-GB"])
-            raw = transcript.fetch().to_raw_data()
-            text = " ".join(item.get("text", "") for item in raw if item.get("text"))
-            if text.strip():
-                return video_id, text.strip(), warnings
-    except Exception as e:
-        warnings.append("Official captions unavailable. Falling back to audio stream extraction via yt-dlp.")
+            pass
 
-    # 2. Fallback: Download audio stream via yt-dlp and transcribe
+        # Search transcript list for any available transcript (manual or auto-generated)
+        try:
+            transcript_list = api.list(video_id)
+            # Try manual transcripts first
+            for t in transcript_list:
+                if not getattr(t, "is_generated", False):
+                    try:
+                        raw = t.fetch().to_raw_data()
+                        text = " ".join(item.get("text", "") for item in raw if item.get("text"))
+                        if text.strip():
+                            return video_id, text.strip(), warnings
+                    except Exception:
+                        pass
+            # Try generated transcripts or any language
+            for t in transcript_list:
+                try:
+                    raw = t.fetch().to_raw_data()
+                    text = " ".join(item.get("text", "") for item in raw if item.get("text"))
+                    if text.strip():
+                        return video_id, text.strip(), warnings
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    # 2. Attempt to fetch captions via yt-dlp metadata (cloud-resilient, handles datacenter IP restrictions)
+    try:
+        ytdlp_text = extract_captions_via_ytdlp(video_id)
+        if ytdlp_text and ytdlp_text.strip():
+            return video_id, ytdlp_text.strip(), warnings
+    except Exception:
+        pass
+
+    warnings.append("Direct captions unavailable. Falling back to audio stream extraction and AI transcription.")
+
+    # 3. Fallback: Download audio stream via yt-dlp and transcribe with AI
     with tempfile.TemporaryDirectory() as tmpdir:
         audio_out = os.path.join(tmpdir, f"{video_id}.%(ext)s")
-        ydl_opts = {
-            "format": "bestaudio/best",
+        ydl_opts = build_ytdlp_opts({
+            "format": "ba/b",
             "outtmpl": audio_out,
             "max_filesize": MAX_MEDIA_BYTES,
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
-        }
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["android", "ios", "mweb", "tv", "web"]
+                }
+            },
+        })
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
         except Exception as e:
-            raise ValueError(f"Could not retrieve YouTube audio stream: {str(e)}")
+            err_str = str(e)
+            err_lower = err_str.lower()
+            if "sign in to confirm you're not a bot" in err_lower or "bot" in err_lower:
+                raise ValueError(
+                    "YouTube anti-bot verification blocked automated extraction from this cloud server. "
+                    "Cloud hosts (like Render or Vercel) are frequently restricted by YouTube. "
+                    "You can paste the video transcript directly into the editor below, "
+                    "or upload an audio/video recording under the 'Audio & Video' tab."
+                )
+            elif "unavailable" in err_lower or "not available" in err_lower:
+                raise ValueError(
+                    f"This YouTube video ({video_id}) is unavailable, private, or region-restricted. "
+                    "Please verify the URL or paste the transcript text directly into the editor."
+                )
+            elif "copyright" in err_lower or "blocked" in err_lower:
+                raise ValueError(
+                    f"This YouTube video ({video_id}) cannot be downloaded due to access restrictions. "
+                    "Please paste the transcript text directly into the editor."
+                )
+            else:
+                raise ValueError(
+                    f"Could not retrieve YouTube audio or transcript ({video_id}). "
+                    "Please paste the transcript text directly into the editor, or upload the media file."
+                )
 
         downloaded_files = [os.path.join(tmpdir, f) for f in os.listdir(tmpdir) if not f.endswith(".part")]
         if not downloaded_files:
-            raise ValueError("Failed to retrieve audio stream from YouTube video.")
+            raise ValueError(
+                "YouTube returned no audio stream for this video. "
+                "Please paste the transcript directly or upload the media file."
+            )
 
         audio_file_path = downloaded_files[0]
         try:

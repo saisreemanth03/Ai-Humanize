@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
   ArrowDown,
@@ -265,7 +266,29 @@ export default function StudioWorkspace({
       {/* Notices & Errors */}
       {(error || notice) && (
         <div role="status" className={error ? 'notice error' : 'notice'}>
-          {error || notice}
+          <div className="notice-content-wrap">
+            <span className="notice-text">{error || notice}</span>
+            {error && /youtube/i.test(error) && (
+              <div className="notice-actions-strip">
+                <button
+                  type="button"
+                  className="notice-action-btn primary"
+                  onClick={() => {
+                    const el = document.getElementById('source-input');
+                    if (el) {
+                      el.focus();
+                      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                  }}
+                >
+                  ✍️ Paste Transcript Directly
+                </button>
+                <Link to="/studio/media" className="notice-action-btn secondary">
+                  🎙️ Upload Audio/Video Instead
+                </Link>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

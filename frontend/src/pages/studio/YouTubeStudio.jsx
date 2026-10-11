@@ -35,6 +35,18 @@ export default function YouTubeStudio() {
     }
   }
 
+  const [showGuide, setShowGuide] = useState(false);
+
+  function handleFocusEditor() {
+    studio.setError('');
+    studio.setNotice('Editor ready: paste your YouTube transcript or subtitles below, then click "Humanize text".');
+    const el = document.getElementById('source-input');
+    if (el) {
+      el.focus();
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+
   const youtubeSlot = (
     <div className="youtube-panel">
       <div className="youtube-input-wrap">
@@ -49,6 +61,14 @@ export default function YouTubeStudio() {
         />
         <button
           type="button"
+          className="button secondary manual-paste-btn"
+          onClick={handleFocusEditor}
+          title="Directly paste transcript or subtitles into the editor"
+        >
+          ✍️ Manual Paste
+        </button>
+        <button
+          type="button"
           className="button primary fetch-btn"
           disabled={studio.transcribing || !youtubeUrl.trim()}
           onClick={handleFetchYouTube}
@@ -60,9 +80,32 @@ export default function YouTubeStudio() {
           )}
         </button>
       </div>
-      <span className="youtube-hint">
-        Extracts official captions or streams audio for speech-to-text transcription directly into the editor.
-      </span>
+      <div className="youtube-subbar">
+        <span className="youtube-hint">
+          Extracts official captions or streams audio for speech-to-text transcription directly into the editor.
+        </span>
+        <button
+          type="button"
+          className="youtube-guide-toggle"
+          onClick={() => setShowGuide(!showGuide)}
+        >
+          {showGuide ? 'Hide transcript guide ▴' : 'How to copy transcripts in 2 clicks ▾'}
+        </button>
+      </div>
+
+      {showGuide && (
+        <div className="youtube-guide-card">
+          <div className="guide-heading">
+            <b>⚡ How to grab any YouTube transcript in seconds:</b>
+            <button type="button" className="guide-close-btn" onClick={() => setShowGuide(false)}>✕</button>
+          </div>
+          <ol className="guide-list">
+            <li>Open the video on YouTube in your browser.</li>
+            <li>Click <b>"… More"</b> below the video title/description, then select <b>"Show transcript"</b>.</li>
+            <li>Copy the transcript lines and paste them directly into the editor below!</li>
+          </ol>
+        </div>
+      )}
     </div>
   );
 
