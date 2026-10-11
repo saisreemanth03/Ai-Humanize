@@ -333,7 +333,13 @@ def fetch_via_supadata(url: str) -> Optional[str]:
     Fetches transcript via Supadata managed proxy API if SUPADATA_API_KEY is configured.
     Guarantees 100% cloud bypass with zero bot blocks or cookie maintenance.
     """
-    api_key = os.environ.get("SUPADATA_API_KEY")
+    api_key = (
+        os.environ.get("SUPADATA_API_KEY")
+        or os.environ.get("supadata")
+        or os.environ.get("SUPADATA")
+        or os.environ.get("supadata_api_key")
+        or os.environ.get("SUPADATA_KEY")
+    )
     if not api_key:
         return None
     try:
