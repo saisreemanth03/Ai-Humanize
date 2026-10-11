@@ -8,8 +8,9 @@ export default function YouTubeStudio() {
   const studio = useHumanizeStudio('Audio / Video Transcript & Spoken Dialogue', 'Conversational');
   const [youtubeUrl, setYoutubeUrl] = useState('');
 
-  async function handleFetchYouTube() {
-    if (!youtubeUrl.trim()) {
+  async function handleFetchYouTube(urlOverride) {
+    const targetUrl = (typeof urlOverride === 'string' ? urlOverride : youtubeUrl).trim();
+    if (!targetUrl) {
       studio.setError('Please enter a valid YouTube video URL.');
       return;
     }
@@ -21,7 +22,7 @@ export default function YouTubeStudio() {
     studio.setTranscribing(true);
 
     try {
-      const data = await extractYouTube(youtubeUrl.trim());
+      const data = await extractYouTube(targetUrl);
       studio.setInput(data.extracted_text || '');
       studio.setContext('Audio / Video Transcript & Spoken Dialogue');
       studio.setTone('Conversational');
@@ -45,6 +46,11 @@ export default function YouTubeStudio() {
       el.focus();
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
+  }
+
+  function handleUseSample(sample = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ') {
+    setYoutubeUrl(sample);
+    handleFetchYouTube(sample);
   }
 
   const youtubeSlot = (
@@ -71,7 +77,7 @@ export default function YouTubeStudio() {
           type="button"
           className="button primary fetch-btn"
           disabled={studio.transcribing || !youtubeUrl.trim()}
-          onClick={handleFetchYouTube}
+          onClick={() => handleFetchYouTube()}
         >
           {studio.transcribing ? (
             <><LoaderCircle className="spin" size={15} /> Fetching…</>
@@ -82,7 +88,14 @@ export default function YouTubeStudio() {
       </div>
       <div className="youtube-subbar">
         <span className="youtube-hint">
-          Extracts official captions or streams audio for speech-to-text transcription directly into the editor.
+          Extracts captions or streams audio into the editor. Try sample:{" "}
+          <button
+            type="button"
+            className="sample-link-btn"
+            onClick={() => handleUseSample('https://www.youtube.com/watch?v=dQw4w9WgXcQ')}
+          >
+            Sample Video
+          </button>
         </span>
         <button
           type="button"

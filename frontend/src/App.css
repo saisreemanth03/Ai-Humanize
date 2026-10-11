@@ -898,6 +898,21 @@ main {
   padding-left: 4px;
 }
 
+.sample-link-btn {
+  background: none;
+  border: none;
+  color: #b97860;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0 2px;
+}
+
+.sample-link-btn:hover {
+  color: #8c4731;
+}
+
 .youtube-guide-toggle {
   background: none;
   border: 0;
