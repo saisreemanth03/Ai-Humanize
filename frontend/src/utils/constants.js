@@ -39,6 +39,7 @@ export function analyzeClientText(text) {
 export function cleanTranscriptNoise(text) {
   if (!text) return '';
   return text
+    .replace(/(?:^|\n|\s)\d{1,2}:\d{2}(?::\d{2})?\s*/g, ' ')
     .replace(/\[(?:music|crying|applause|laughter|cheering|sniffling|coughing|sighs?|gasp|groans?|inaudible)\]\s*/gi, '')
     .replace(/>\s*>\s*/g, ' ')
     .replace(/\b[A-Z]{2,}\b/g, (w) => (['API', 'SQL', 'AWS', 'GPA', 'HTML', 'CSS', 'REST'].includes(w) ? w : w.charAt(0) + w.slice(1).toLowerCase()))

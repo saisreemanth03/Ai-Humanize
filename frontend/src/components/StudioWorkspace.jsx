@@ -71,7 +71,7 @@ export default function StudioWorkspace({
   }
 
   const hasTranscriptArtifacts = useMemo(() => {
-    return /(?:\[(?:music|crying|applause|laughter|cheering|sniffling)\]|>>)/i.test(input || '');
+    return /(?:\[(?:music|crying|applause|laughter|cheering|sniffling)\]|>>|\b\d{1,2}:\d{2}\b)/i.test(input || '');
   }, [input]);
 
   return (
