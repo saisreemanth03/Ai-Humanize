@@ -117,3 +117,25 @@ The backend suite uses mocked AI calls, so it does not require an API key or inc
 ## Security and privacy
 
 The API key is read only by the backend. Upload size, extension, and text length are constrained; files are processed in memory and not saved. CORS allows only `FRONTEND_ORIGIN`. Use HTTPS, a protected secret store, and a private backend in deployment. Check your OpenAI account's data handling settings before sending sensitive text.
+
+## Production Split-Deployment (Docker + Vercel)
+
+### 1. Backend Containerization (Render / Cloud Run / Railway / Fly.io)
+The backend includes a `Dockerfile` with system-level `ffmpeg` dependencies pre-installed for audio/video processing:
+```bash
+cd backend
+docker build -t humanizeai-backend .
+docker run -p 8000:8000 -e PORT=8000 -e GEMINI_API_KEY="your-key" humanizeai-backend
+```
+In your cloud dashboard, configure the following Environment Variables:
+- `PORT`: `8000` (or platform default)
+- `GEMINI_API_KEY` or `OPENAI_API_KEY`: Your AI provider credentials
+- `FRONTEND_ORIGIN`: Your deployed frontend domain (e.g. `https://humanize-ai.vercel.app`)
+
+### 2. Frontend SPA Deployment (Vercel / Cloudflare Pages)
+The frontend is configured with `vercel.json` for React Router SPA rewrites:
+- **Framework Preset**: Vite
+- **Root Directory**: `frontend`
+- **Build Command**: `npm run build`
+- **Output Directory**: `dist`
+- **Environment Variable**: `VITE_API_BASE_URL` pointing to your deployed backend (e.g., `https://your-backend.onrender.com`)
