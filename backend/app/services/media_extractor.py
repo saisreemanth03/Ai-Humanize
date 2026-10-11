@@ -206,7 +206,14 @@ def get_yt_dlp_cookie_file() -> Optional[str]:
     if cookie_file and os.path.isfile(cookie_file):
         return cookie_file
 
-    cookie_text = os.environ.get("YOUTUBE_COOKIES_TEXT")
+    cookie_text = (
+        os.environ.get("YOUTUBE_COOKIES_TEXT")
+        or os.environ.get("youtube")
+        or os.environ.get("YOUTUBE")
+        or os.environ.get("YOUTUBE_COOKIES")
+        or os.environ.get("YOUTUBE_COOKIE")
+        or os.environ.get("yt")
+    )
     if cookie_text and cookie_text.strip():
         try:
             raw = cookie_text.strip().strip("'\"")
