@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink, Link } from 'react-router-dom';
-import { Feather, Zap, ArrowRight, Menu, X } from 'lucide-react';
+import { Feather, ArrowRight, Menu, X } from 'lucide-react';
 
 export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -13,10 +13,6 @@ export default function Navbar() {
         <span className="brand-mark"><Feather size={20} /></span>
         <span>humanize<span className="brand-ai">ai</span></span>
       </Link>
-
-      <div className="track-badge">
-        <Zap size={13} /> Problem Track 02: AI Humanization
-      </div>
 
       <button
         className="mobile-toggle"

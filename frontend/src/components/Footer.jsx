@@ -8,7 +8,7 @@ export default function Footer() {
         <span className="brand-mark"><Feather size={18} /></span>
         <span>humanize<span className="brand-ai">ai</span></span>
       </Link>
-      <p>Problem Track 02: AI Humanization & Natural Language Refinement</p>
+      <p>AI Humanization & Natural Language Refinement</p>
       <div className="footer-meta">
         <span>FastAPI · React 18 · Whisper & Gemini · Entity Guardrails</span>
       </div>
