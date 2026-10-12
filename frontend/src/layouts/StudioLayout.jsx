@@ -1,5 +1,5 @@
 import { useLocation, useNavigate, NavLink, Outlet } from 'react-router-dom';
-import { Feather, FileUp, Video, Youtube, ShieldCheck, ChevronDown } from 'lucide-react';
+import { Feather, FileUp, Video, Youtube, MessageSquare, ShieldCheck, ChevronDown } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 
@@ -9,6 +9,12 @@ const STUDIO_MODES = [
     label: 'Write or paste text',
     shortLabel: 'Text',
     icon: Feather,
+  },
+  {
+    path: '/studio/chat-link',
+    label: 'AI Chat Links',
+    shortLabel: 'AI Chat',
+    icon: MessageSquare,
   },
   {
     path: '/studio/document',
@@ -29,6 +35,7 @@ const STUDIO_MODES = [
     icon: Youtube,
   },
 ];
+
 
 export default function StudioLayout() {
   const location = useLocation();

@@ -3,11 +3,21 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from app.schemas import HumanizeRequest, HumanizeResponse, AnalyzeRequest, RoboticAnalysis, YouTubeExtractRequest, MediaExtractResponse
+from app.schemas import (
+    HumanizeRequest,
+    HumanizeResponse,
+    AnalyzeRequest,
+    RoboticAnalysis,
+    YouTubeExtractRequest,
+    MediaExtractResponse,
+    ChatLinkExtractRequest,
+    ChatLinkExtractResponse,
+)
 from app.services.humanizer import humanize, correct_missing_entities
 from app.services.validator import validate, deterministic_validation_fallback
 from app.services.document_extractor import extract_document, MAX_TEXT_CHARS
 from app.services.media_extractor import extract_media_file, extract_youtube, MAX_MEDIA_BYTES
+from app.services.chat_link_extractor import extract_chat_link
 from app.utils.entity_checks import extract_entities, compare_entities, detailed_entity_audit
 from app.utils.robotic_detector import analyze_robotic_language
 
@@ -68,6 +78,16 @@ def extract_yt(req: YouTubeExtractRequest):
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
+@app.post("/api/fetch-ai-link", response_model=ChatLinkExtractResponse)
+@app.post("/api/fetch-chat-link", response_model=ChatLinkExtractResponse)
+async def fetch_chat_link(req: ChatLinkExtractRequest):
+    try:
+        return await extract_chat_link(req.url)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch chat link: {str(e)}")
+
 @app.post("/api/humanize")
 def process(req: HumanizeRequest):
     text = req.text.strip()
@@ -87,26 +107,34 @@ def process(req: HumanizeRequest):
             provider=req.provider,
             model_override=req.model
         )
-    except RuntimeError as e:
+    except RuntimeError:
         # Fallback to local heuristic humanizer if server AI keys are unconfigured
         from app.utils.heuristic_humanizer import heuristic_humanize
         result = heuristic_humanize(text, req.context, req.tone, req.minimal_rewrite)
     except Exception as e:
         from openai import APITimeoutError, AuthenticationError, RateLimitError
+        from app.utils.heuristic_humanizer import heuristic_humanize
+
         if isinstance(e, (TimeoutError, APITimeoutError)):
-            raise HTTPException(status_code=504, detail="The AI request timed out. Please try again.")
-        if isinstance(e, AuthenticationError):
+            result = heuristic_humanize(text, req.context, req.tone, req.minimal_rewrite)
+            result.setdefault("warnings", []).append(
+                "Upstream AI request timed out. Content was refined using the local natural language engine."
+            )
+        elif isinstance(e, AuthenticationError):
             if req.api_key:
                 raise HTTPException(status_code=401, detail="Invalid AI API Key provided. Please verify your custom key.")
-            from app.utils.heuristic_humanizer import heuristic_humanize
             result = heuristic_humanize(text, req.context, req.tone, req.minimal_rewrite)
+            result.setdefault("warnings", []).append(
+                "Upstream AI authentication failed. Content was refined using the local natural language engine."
+            )
         elif isinstance(e, RateLimitError):
             if req.api_key:
                 raise HTTPException(status_code=429, detail="Your custom API key quota or rate limit was reached.")
-            from app.utils.heuristic_humanizer import heuristic_humanize
             result = heuristic_humanize(text, req.context, req.tone, req.minimal_rewrite)
+            result.setdefault("warnings", []).append(
+                "Upstream AI quota reached. Content was refined using the local natural language engine."
+            )
         else:
-            from app.utils.heuristic_humanizer import heuristic_humanize
             result = heuristic_humanize(text, req.context, req.tone, req.minimal_rewrite)
 
     # 2. Strict Entity & Terminology Guardrail: Audit entities & run correction pass if needed

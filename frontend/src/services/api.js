@@ -11,5 +11,7 @@ export const humanizeText = (data) => request('/api/humanize', { method:'POST', 
 export const extractDocument = (file) => { const data = new FormData(); data.append('file',file); return request('/api/extract-document',{method:'POST',body:data}); };
 export const extractMedia = (file) => { const data = new FormData(); data.append('file',file); return request('/api/extract-media',{method:'POST',body:data}); };
 export const extractYouTube = (url) => request('/api/extract-youtube', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ url }) });
+export const fetchChatLink = (url) => request('/api/fetch-chat-link', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ url }) });
+export const fetchAiLink = (url) => request('/api/fetch-ai-link', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ url }) });
 export const analyzeRobotic = (text) => request('/api/analyze-robotic', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ text }) });
 

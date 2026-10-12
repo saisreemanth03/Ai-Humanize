@@ -116,3 +116,21 @@ def test_ai_json_with_wrong_field_types_is_rejected():
     from app.services.humanizer import _json_object
     with pytest.raises(ValueError, match="warnings list"):
         _json_object(json.dumps({"humanized_text":"Text.","warnings":"not a list"}))
+
+def test_timeout_falls_back_gracefully_to_heuristic(monkeypatch):
+    from openai import APITimeoutError
+    import httpx
+    fake_request = httpx.Request("POST", "https://generativelanguage.googleapis.com")
+    def fake_humanize_timeout(*args, **kwargs):
+        raise APITimeoutError(fake_request)
+    monkeypatch.setattr(main, "humanize", fake_humanize_timeout)
+    monkeypatch.setattr(main, "validate", lambda *args, **kwargs: {
+        "meaning_status": "Passed", "meaning_preserved": True,
+        "factuality_status": "Passed", "factuality_confidence": 95,
+        "semantic_similarity_score": 92, "unsupported_claims_detected": False,
+        "changed_facts": [], "added_claims": [], "omitted_claims": [], "review_warnings": []
+    })
+    response = main.process(HumanizeRequest(text="Furthermore, it is imperative to delve into the matter."))
+    assert "humanized_text" in response
+    assert response["humanized_text"] != ""
+    assert any("timed out" in w.lower() for w in response["warnings"])

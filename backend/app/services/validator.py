@@ -41,7 +41,7 @@ def validate(
     client, model = get_ai_client(custom_api_key=api_key, custom_provider=provider, custom_model=model_override)
     candidate_models = [model]
     if not model_override and not api_key and ("gemini" in model.lower() or "flash" in model.lower()):
-        for backup in ["gemini-3.1-flash-lite", "gemini-3-flash-preview", "gemini-3.8-flash", "gemini-2.5-flash"]:
+        for backup in ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"]:
             if backup not in candidate_models:
                 candidate_models.append(backup)
 
@@ -61,8 +61,8 @@ def validate(
             break
         except Exception as e:
             last_exc = e
-            from openai import RateLimitError, NotFoundError
-            if isinstance(e, (RateLimitError, NotFoundError)) and candidate != candidate_models[-1]:
+            from openai import RateLimitError, NotFoundError, APITimeoutError, APIConnectionError, InternalServerError
+            if isinstance(e, (RateLimitError, NotFoundError, APITimeoutError, TimeoutError, APIConnectionError, InternalServerError)) and candidate != candidate_models[-1]:
                 continue
             raise e
     if not isinstance(result, dict):

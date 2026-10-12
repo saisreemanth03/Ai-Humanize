@@ -76,3 +76,16 @@ class MediaExtractResponse(BaseModel):
     word_count: int
     character_count: int
     warnings: list[str] = []
+
+class ChatLinkExtractRequest(BaseModel):
+    url: str = Field(min_length=1)
+
+class ChatLinkExtractResponse(BaseModel):
+    platform: str
+    url: str
+    extracted_text: str
+    word_count: int
+    character_count: int
+    turns_count: int = 1
+    warnings: list[str] = []
+

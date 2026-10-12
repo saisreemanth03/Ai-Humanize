@@ -37,17 +37,6 @@ export default function Navbar() {
         <span>humanize<span className="brand-ai">ai</span></span>
       </Link>
 
-      {/* Mobile Hamburger Toggle Button */}
-      <button
-        type="button"
-        className="mobile-toggle"
-        aria-label="Open navigation menu"
-        aria-expanded={mobileOpen}
-        onClick={() => setMobileOpen(true)}
-      >
-        <Menu size={22} />
-      </button>
-
       {/* Dimmed Backdrop for Mobile Navigation Overlay */}
       {mobileOpen && (
         <div
@@ -135,6 +124,17 @@ export default function Navbar() {
       <Link className="nav-cta" to="/studio/text">
         Open Studio <ArrowRight size={16} />
       </Link>
+
+      {/* Mobile Hamburger Toggle Button (Positioned at far right) */}
+      <button
+        type="button"
+        className="mobile-toggle"
+        aria-label="Open navigation menu"
+        aria-expanded={mobileOpen}
+        onClick={() => setMobileOpen(true)}
+      >
+        <Menu size={22} />
+      </button>
     </header>
   );
 }

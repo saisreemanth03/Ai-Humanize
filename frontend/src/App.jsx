@@ -5,6 +5,7 @@ import TextStudio from './pages/studio/TextStudio';
 import DocumentStudio from './pages/studio/DocumentStudio';
 import MediaStudio from './pages/studio/MediaStudio';
 import YouTubeStudio from './pages/studio/YouTubeStudio';
+import ChatLinkStudio from './pages/studio/ChatLinkStudio';
 import './App.css';
 
 export default function App() {
@@ -18,10 +19,12 @@ export default function App() {
         <Route path="/studio" element={<StudioLayout />}>
           <Route index element={<Navigate to="/studio/text" replace />} />
           <Route path="text" element={<TextStudio />} />
+          <Route path="chat-link" element={<ChatLinkStudio />} />
           <Route path="document" element={<DocumentStudio />} />
           <Route path="media" element={<MediaStudio />} />
           <Route path="youtube" element={<YouTubeStudio />} />
         </Route>
+
 
         {/* Fallback route */}
         <Route path="*" element={<Navigate to="/" replace />} />

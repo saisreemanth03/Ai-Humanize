@@ -8,6 +8,7 @@ import {
   FileText,
   Feather,
   Youtube,
+  MessageSquare,
   Zap,
   Lock,
   RefreshCw,
@@ -79,34 +80,58 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="tool-cards-grid">
-            <Link to="/studio/text" className="tool-card">
-              <div className="tool-icon-wrap"><Feather size={22} /></div>
-              <h3>Write or Paste Text</h3>
-              <p>Type or paste recruiter messages, candidate evaluations, or cover letters with instant robotic score analysis.</p>
-              <span className="tool-card-cta">Open Text Studio <ArrowRight size={14} /></span>
+          <div className="tools-showcase-container">
+            {/* FULL-WIDTH FEATURED ROW: Write or Paste Text */}
+            <Link to="/studio/text" className="tool-card tool-card-featured">
+              <div className="tool-featured-main">
+                <div className="tool-icon-wrap tool-featured-icon">
+                  <Feather size={26} />
+                </div>
+                <div className="tool-featured-content">
+                  <span className="tool-featured-tag">Primary Studio · Direct Input</span>
+                  <h3>Write or Paste Text</h3>
+                  <p>
+                    Type or paste recruiter messages, candidate evaluations, or cover letters with instant robotic score analysis, tone tuning, and live entity guardrails.
+                  </p>
+                </div>
+              </div>
+              <div className="tool-featured-action">
+                <span className="tool-featured-cta">
+                  Open Text Studio <ArrowRight size={16} />
+                </span>
+              </div>
             </Link>
 
-            <Link to="/studio/document" className="tool-card">
-              <div className="tool-icon-wrap"><FileText size={22} /></div>
-              <h3>Document Upload</h3>
-              <p>Drag and drop PDF, DOCX, or TXT documents up to 5 MB for automatic structured text extraction and refinement.</p>
-              <span className="tool-card-cta">Upload Document <ArrowRight size={14} /></span>
-            </Link>
+            {/* REMAINING 4 MULTIMODAL CHANNELS */}
+            <div className="tool-cards-subgrid">
+              <Link to="/studio/chat-link" className="tool-card">
+                <div className="tool-icon-wrap"><MessageSquare size={22} /></div>
+                <h3>AI Chat Links</h3>
+                <p>Paste a shared link from ChatGPT, Gemini, or Claude to automatically fetch and humanize the conversation.</p>
+                <span className="tool-card-cta">Fetch AI Chat <ArrowRight size={14} /></span>
+              </Link>
 
-            <Link to="/studio/media" className="tool-card">
-              <div className="tool-icon-wrap"><Video size={22} /></div>
-              <h3>Audio & Video Media</h3>
-              <p>Upload MP4, MOV, MP3, or WAV files up to 25 MB for AI speech transcription, tag cleanup, and voice humanization.</p>
-              <span className="tool-card-cta">Transcribe Audio/Video <ArrowRight size={14} /></span>
-            </Link>
+              <Link to="/studio/document" className="tool-card">
+                <div className="tool-icon-wrap"><FileText size={22} /></div>
+                <h3>Document Upload</h3>
+                <p>Drag and drop PDF, DOCX, or TXT documents up to 5 MB for automatic structured text extraction and refinement.</p>
+                <span className="tool-card-cta">Upload Document <ArrowRight size={14} /></span>
+              </Link>
 
-            <Link to="/studio/youtube" className="tool-card">
-              <div className="tool-icon-wrap"><Youtube size={22} /></div>
-              <h3>YouTube Transcripts</h3>
-              <p>Paste any YouTube link to fetch official or auto-generated captions, strip subtitle noise, and humanize.</p>
-              <span className="tool-card-cta">Fetch YouTube <ArrowRight size={14} /></span>
-            </Link>
+              <Link to="/studio/media" className="tool-card">
+                <div className="tool-icon-wrap"><Video size={22} /></div>
+                <h3>Audio & Video Media</h3>
+                <p>Upload MP4, MOV, MP3, or WAV files up to 25 MB for AI speech transcription, tag cleanup, and voice humanization.</p>
+                <span className="tool-card-cta">Transcribe Audio/Video <ArrowRight size={14} /></span>
+              </Link>
+
+              <Link to="/studio/youtube" className="tool-card">
+                <div className="tool-icon-wrap"><Youtube size={22} /></div>
+                <h3>YouTube Transcripts</h3>
+                <p>Paste any YouTube link to fetch official or auto-generated captions, strip subtitle noise, and humanize.</p>
+                <span className="tool-card-cta">Fetch YouTube <ArrowRight size={14} /></span>
+              </Link>
+            </div>
           </div>
         </section>
 
