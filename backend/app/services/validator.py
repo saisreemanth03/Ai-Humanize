@@ -36,12 +36,18 @@ def validate(
     rewritten: str,
     api_key: Optional[str] = None,
     provider: Optional[str] = None,
-    model_override: Optional[str] = None
+    model_override: Optional[str] = None,
+    deep_validation: bool = False,
+    missing_entities: Optional[list[str]] = None
 ) -> dict:
+    # High-speed deterministic verification engine (<1ms) to eliminate secondary LLM roundtrip latency
+    if not deep_validation and not api_key:
+        return deterministic_validation_fallback(original, rewritten, missing_entities=missing_entities)
+
     client, model = get_ai_client(custom_api_key=api_key, custom_provider=provider, custom_model=model_override)
     candidate_models = [model]
     if not model_override and not api_key and ("gemini" in model.lower() or "flash" in model.lower()):
-        for backup in ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"]:
+        for backup in ["gemini-2.5-flash", "gemini-3.1-flash-lite", "gemini-3.5-flash-lite"]:
             if backup not in candidate_models:
                 candidate_models.append(backup)
 

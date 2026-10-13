@@ -53,12 +53,10 @@ STRICT ENTITY & FACTUALITY GUARDRAIL:
 - Keep qualifications, limitations, uncertainty, and context intact.
 
 OUTPUT SPECIFICATION:
-Return valid JSON only with keys:
-- humanized_text (string): the refined, natural text
-- changes_summary (string): concise summary of what was refined
-- robotic_signals (array of strings): list of robotic expressions or clichés that were eliminated
-- uncertain_edits (array of strings): any phrasing choices that author should double check
-- warnings (array of strings): any potential concerns or flagged ambiguities
+Return valid compact JSON only with keys:
+- humanized_text (string): the refined, natural human text
+- changes_summary (string): concise 1-sentence summary of what was refined
+Keep output compact and avoid unnecessary tokens to minimize latency.
 """
 
 VALIDATOR_PROMPT = """Independently audit and compare the original source text with the humanized rewrite. Do not assume the rewrite is faithful.

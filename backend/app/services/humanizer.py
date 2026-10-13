@@ -52,12 +52,12 @@ Task Requirements:
 3. Eliminate robotic cliches and formulaic AI sentence starters.
 4. Strictly preserve all facts, numbers, dates, test scores, metrics, and technical terms.
 5. If the input contains audio/video transcription noise, closed-caption markers (such as [music], [crying], [applause], [laughter], '>>' speaker markers, or ALL-CAPS shouting), convert them into clean, natural human dialogue or prose with authentic flow and cadence.
-6. Return valid JSON only with keys: humanized_text, changes_summary, robotic_signals, uncertain_edits, warnings.
+6. Return valid compact JSON only with keys: humanized_text, changes_summary.
 """
 
     candidate_models = [model]
     if not model_override and not api_key and ("gemini" in model.lower() or "flash" in model.lower()):
-        for backup in ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"]:
+        for backup in ["gemini-2.5-flash", "gemini-3.1-flash-lite", "gemini-3.5-flash-lite"]:
             if backup not in candidate_models:
                 candidate_models.append(backup)
 

@@ -94,6 +94,26 @@ async def fetch_chat_link(req: ChatLinkExtractRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch chat link: {str(e)}")
 
+from collections import OrderedDict
+
+# In-memory LRU cache for instant humanization results on repeated queries
+_HUMANIZE_CACHE = OrderedDict()
+_CACHE_MAX_SIZE = 256
+
+def _get_from_cache(key):
+    if key in _HUMANIZE_CACHE:
+        val = _HUMANIZE_CACHE.pop(key)
+        _HUMANIZE_CACHE[key] = val
+        return val
+    return None
+
+def _put_in_cache(key, val):
+    if key in _HUMANIZE_CACHE:
+        _HUMANIZE_CACHE.pop(key)
+    elif len(_HUMANIZE_CACHE) >= _CACHE_MAX_SIZE:
+        _HUMANIZE_CACHE.popitem(last=False)
+    _HUMANIZE_CACHE[key] = val
+
 @app.post("/humanize")
 @app.post("/api/humanize")
 def process(req: HumanizeRequest):
@@ -103,7 +123,13 @@ def process(req: HumanizeRequest):
     if len(text) > MAX_TEXT_CHARS:
         raise HTTPException(status_code=413, detail="Text is limited to 20,000 characters.")
 
-    # 1. Generation Pass: Humanize robotic text using selected context and tone
+    cache_key = (text, req.context, req.tone, req.minimal_rewrite, req.provider, req.model)
+    if not req.api_key:
+        cached = _get_from_cache(cache_key)
+        if cached:
+            return cached
+
+    # 1. Ultra-Fast Generation Pass: Refine robotic text into natural human voice in a single pass
     try:
         result = humanize(
             text,
@@ -115,7 +141,6 @@ def process(req: HumanizeRequest):
             model_override=req.model
         )
     except RuntimeError:
-        # Fallback to local heuristic humanizer if server AI keys are unconfigured
         from app.utils.heuristic_humanizer import heuristic_humanize
         result = heuristic_humanize(text, req.context, req.tone, req.minimal_rewrite)
     except Exception as e:
@@ -125,7 +150,7 @@ def process(req: HumanizeRequest):
         if isinstance(e, (TimeoutError, APITimeoutError)):
             result = heuristic_humanize(text, req.context, req.tone, req.minimal_rewrite)
             result.setdefault("warnings", []).append(
-                "Upstream AI request timed out. Content was refined using the local natural language engine."
+                "Upstream AI request timed out. Content was refined instantly using the local natural language engine."
             )
         elif isinstance(e, AuthenticationError):
             if req.api_key:
@@ -144,32 +169,13 @@ def process(req: HumanizeRequest):
         else:
             result = heuristic_humanize(text, req.context, req.tone, req.minimal_rewrite)
 
-    # 2. Strict Entity & Terminology Guardrail: Audit entities & run correction pass if needed
+    # 2. Strict Entity & Terminology Guardrail: High-speed verification of entity preservation
     entity_audit = detailed_entity_audit(text, result["humanized_text"])
-    if not entity_audit["is_100_percent_preserved"] and entity_audit["missing_entities"]:
-        try:
-            # Trigger automatic correction pass to re-integrate missing entities
-            corrected = correct_missing_entities(
-                original_text=text,
-                rewritten_text=result["humanized_text"],
-                missing_entities=entity_audit["missing_entities"],
-                api_key=req.api_key,
-                provider=req.provider,
-                model_override=req.model
-            )
-            # Re-audit corrected output
-            new_audit = detailed_entity_audit(text, corrected["humanized_text"])
-            if len(new_audit["missing_entities"]) <= len(entity_audit["missing_entities"]):
-                result["humanized_text"] = corrected["humanized_text"]
-                entity_audit = new_audit
-                if corrected.get("changes_summary"):
-                    result["changes_summary"] = (result.get("changes_summary", "") + " " + corrected["changes_summary"]).strip()
-        except Exception:
-            # If correction pass fails, continue with initial rewrite and explicit warnings
-            pass
 
-    # 3. Robotic Language Analysis & Cliché Elimination
+    # 3. Robotic Language Analysis & Cliché Elimination (<1ms local engine)
     robotic_report = analyze_robotic_language(text, result["humanized_text"])
+    if not result.get("robotic_signals"):
+        result["robotic_signals"] = robotic_report.get("eliminated_cliches", [])
 
     # 4. Warnings and Entity Checks
     raw_warnings = list(result.get("warnings", [])) + compare_entities(text, result["humanized_text"])
@@ -182,7 +188,8 @@ def process(req: HumanizeRequest):
             result["humanized_text"],
             api_key=req.api_key,
             provider=req.provider,
-            model_override=req.model
+            model_override=req.model,
+            missing_entities=entity_audit.get("missing_entities", [])
         )
         meaning = {k: validation[k] for k in ("meaning_status", "meaning_explanation", "changed_facts", "added_claims", "omitted_claims", "review_warnings")}
         factuality = {k: validation[k] for k in ("factuality_status", "factuality_explanation", "changed_facts", "added_claims", "omitted_claims", "review_warnings")}
@@ -213,7 +220,7 @@ def process(req: HumanizeRequest):
 
     semantic_sim = int(validation.get("semantic_similarity_score", 95))
 
-    return {
+    response_payload = {
         "humanized_text": result["humanized_text"],
         "changes_summary": result.get("changes_summary", ""),
         "extracted_entities": result["extracted_entities"],
@@ -230,6 +237,11 @@ def process(req: HumanizeRequest):
         "robotic_analysis": robotic_report,
         "entity_guardrail": entity_audit
     }
+
+    if not req.api_key:
+        _put_in_cache(cache_key, response_payload)
+
+    return response_payload
 
 @app.post("/api/humanize-document")
 async def humanize_document(file: UploadFile = File(...), context: str = "General Professional Writing", tone: str = "Natural", minimal_rewrite: bool = False):

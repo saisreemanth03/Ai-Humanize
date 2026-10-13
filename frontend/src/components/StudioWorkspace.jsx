@@ -255,7 +255,7 @@ export default function StudioWorkspace({
             disabled={busy || transcribing || !input.trim()}
           >
             {busy ? (
-              <><LoaderCircle className="spin" size={16} /> Humanizing & Verifying…</>
+              <><LoaderCircle className="spin" size={16} /> Humanizing text…</>
             ) : (
               <><Sparkles size={16} /> Humanize text</>
             )}

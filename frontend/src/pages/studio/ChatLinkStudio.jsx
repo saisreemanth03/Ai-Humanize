@@ -207,9 +207,10 @@ export default function ChatLinkStudio() {
       );
 
       // Automatically trigger refinement if enabled
+      // Automatically trigger refinement if enabled
       if (autoRefine) {
-        setFetchProgress('Triggering natural humanization pipeline...');
-        setTimeout(async () => {
+        setFetchProgress('Humanizing text naturally...');
+        (async () => {
           try {
             studio.setBusy(true);
             const result = await humanizeText({
@@ -228,7 +229,7 @@ export default function ChatLinkStudio() {
             studio.setBusy(false);
             setFetchProgress('');
           }
-        }, 150);
+        })();
       }
     } catch {
       showToast(
@@ -385,8 +386,8 @@ export default function ChatLinkStudio() {
       );
 
       if (autoRefine) {
-        setFetchProgress('Triggering natural humanization pipeline...');
-        setTimeout(async () => {
+        setFetchProgress('Humanizing text naturally...');
+        (async () => {
           try {
             studio.setBusy(true);
             const result = await humanizeText({
@@ -404,7 +405,7 @@ export default function ChatLinkStudio() {
           } finally {
             studio.setBusy(false);
           }
-        }, 150);
+        })();
       }
     } finally {
       setIsFetching(false);

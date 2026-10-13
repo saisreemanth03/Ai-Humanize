@@ -12,14 +12,9 @@ def _normalize_gemini_model(model_name: Optional[str]) -> str:
     model_lower = model_name.strip().lower()
     if model_lower in (
         "gemini-2.5-flash",
-        "gemini-3.5-flash",
+        "gemini-3.1-flash-lite",
         "gemini-3.5-flash-lite",
         "gemini-3.8-flash",
-        "gemini-3.1-flash-lite",
-        "gemini-1.5-flash",
-        "gemini-2.0-flash",
-        "gemini-1.5-pro",
-        "gemini-2.5-pro",
     ):
         return model_name.strip()
     return valid_env
@@ -46,14 +41,14 @@ def get_ai_client(
             return OpenAI(
                 api_key=custom_api_key,
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                timeout=60,
+                timeout=15,
                 max_retries=1
             ), model
         else:
             model = custom_model or os.getenv("OPENAI_MODEL") or "gpt-4o-mini"
             return OpenAI(
                 api_key=custom_api_key,
-                timeout=60,
+                timeout=15,
                 max_retries=1
             ), model
 
@@ -62,7 +57,7 @@ def get_ai_client(
         model = custom_model or os.getenv("OPENAI_MODEL") or "gpt-4o-mini"
         return OpenAI(
             api_key=env_openai_key,
-            timeout=60,
+            timeout=15,
             max_retries=1
         ), model
 
@@ -71,7 +66,7 @@ def get_ai_client(
         return OpenAI(
             api_key=env_gemini_key,
             base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-            timeout=60,
+            timeout=15,
             max_retries=1
         ), model
 
@@ -79,7 +74,7 @@ def get_ai_client(
         model = custom_model or os.getenv("OPENAI_MODEL") or "gpt-4o-mini"
         return OpenAI(
             api_key=env_openai_key,
-            timeout=60,
+            timeout=15,
             max_retries=1
         ), model
 
