@@ -4,7 +4,16 @@ async function request(path, options) {
   try { response = await fetch(`${BASE}${path}`, options); }
   catch { throw new Error('Could not reach the HumanizeAI server. Check that the backend is running.'); }
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.detail || 'The request could not be completed. Please try again.');
+  if (!response.ok) {
+    if (response.status === 404) {
+      throw new Error(
+        payload.detail && payload.detail !== 'Not Found'
+          ? payload.detail
+          : 'Backend endpoint not found (HTTP 404). Ensure the backend server is running and updated.'
+      );
+    }
+    throw new Error(payload.detail || 'The request could not be completed. Please try again.');
+  }
   return payload;
 }
 export const humanizeText = (data) => request('/api/humanize', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) });

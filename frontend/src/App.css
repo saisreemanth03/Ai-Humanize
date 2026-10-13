@@ -1337,6 +1337,97 @@ main {
   background: #a3624c;
 }
 
+.chatlink-clipboard-btn {
+  background: #f4eee7;
+  color: #6a5e52;
+  border: 1px solid #ebdcd0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.chatlink-clipboard-btn:hover:not(:disabled) {
+  background: #ede3d8;
+  border-color: #d6bead;
+  color: #4b3d30;
+}
+
+.chatlink-blocked-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  background: #fef7ee;
+  border: 1px solid #f9d8a6;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  animation: fadeInToast 0.2s ease;
+}
+
+.chatlink-blocked-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.chatlink-blocked-icon {
+  color: #d97706;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.chatlink-blocked-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.chatlink-blocked-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #92400e;
+}
+
+.chatlink-blocked-desc {
+  font-size: 12px;
+  color: #78350f;
+  line-height: 1.4;
+}
+
+.chatlink-blocked-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.chatlink-blocked-paste-btn {
+  background: #d97706;
+  color: #ffffff;
+  border: 1px solid #b45309;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.chatlink-blocked-paste-btn:hover {
+  background: #b45309;
+}
+
 .chatlink-subbar {
   display: flex;
   align-items: center;
@@ -1366,6 +1457,19 @@ main {
   border-radius: 4px;
   font-family: monospace;
   font-size: 10.5px;
+}
+
+.sample-chip {
+  cursor: pointer;
+  border: 1px solid #ebdcd0;
+  transition: all 0.15s ease;
+  font-weight: 600;
+}
+
+.sample-chip:hover {
+  background: #ebdcd0;
+  color: #3e332a;
+  border-color: #d6bead;
 }
 
 .chatlink-toggles {

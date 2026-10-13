@@ -1,11 +1,8 @@
 import os
 import re
 import json
-import asyncio
-import shutil
-import subprocess
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, Any, List
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 import httpx
@@ -35,88 +32,172 @@ BROWSER_HEADERS = {
     "Upgrade-Insecure-Requests": "1",
 }
 
+ANTIBOT_SIGNATURES = [
+    "just a moment...",
+    "enable javascript and cookies to continue",
+    "verify you are human",
+    "attention required! | cloudflare",
+    "checking your browser before accessing",
+    "cloudflare ray id",
+    "please turn javascript on and reload the page",
+    "please verify that you are not a robot",
+    "cf-browser-verification",
+    "challenge-running",
+    "access denied",
+    "security check to continue",
+    "recaptcha",
+    "cf-turnstile",
+    "ray id:",
+    "ddos protection by cloudflare",
+]
 
-def find_system_browser() -> Optional[str]:
-    """Locates an installed Chrome or Edge executable on the host machine."""
-    candidates = [
-        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-        shutil.which("google-chrome"),
-        shutil.which("chrome"),
-        shutil.which("chromium"),
-        shutil.which("msedge"),
-    ]
-    for c in candidates:
-        if c and os.path.isfile(c):
-            return c
-    return None
+
+JUNK_SHELL_PATTERNS = [
+    "log in to get answers",
+    "what's on your mind today?",
+    "what’s on your mind today?",
+    "what's on the agenda today?",
+    "what’s on the agenda today?",
+    "sign up for free",
+    "get responses tailored to you",
+    "see plans and pricing",
+    "gemini - direct access to google ai",
+    "link doesn't exist",
+    "the link might have been deleted",
+    "conversation has been deleted",
+    "share not found",
+    "stay logged out",
+    "chats may be reviewed and used to improve our ai models",
+    "chat history\nnew chat",
+    "get started for free or download the app",
+]
 
 
-async def render_with_headless_browser(url: str, timeout_sec: float = 8.0) -> Optional[str]:
-    """Runs system headless Chrome/Edge to execute client-side JavaScript (SPAs like Gemini)."""
-    browser_exe = find_system_browser()
-    if not browser_exe:
-        return None
+def is_antibot_or_junk(text: Optional[str]) -> bool:
+    """
+    Checks if extracted text is an anti-bot challenge page or junk content.
+    Rejects payloads with fewer than 40 characters of meaningful content,
+    containing known CAPTCHA/Cloudflare challenge phrases, or containing
+    empty unauthenticated SPA login/landing shell boilerplate.
+    """
+    if not text or not isinstance(text, str):
+        return True
 
-    def _run():
-        cmd = [
-            browser_exe,
-            "--headless=new",
-            "--disable-gpu",
-            "--no-first-run",
-            "--no-default-browser-check",
-            "--virtual-time-budget=6000",
-            "--dump-dom",
-            url,
-        ]
-        try:
-            res = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="ignore",
-                timeout=timeout_sec,
-            )
-            return res.stdout if res.returncode == 0 else None
-        except Exception as e:
-            logger.debug(f"Headless browser render failed: {e}")
-            return None
+    trimmed = text.strip()
+    if len(trimmed) < 40:
+        return True
 
-    try:
-        return await asyncio.to_thread(_run)
-    except Exception:
-        return None
+    lower = trimmed.lower()
+    for sig in ANTIBOT_SIGNATURES:
+        if sig in lower:
+            return True
+
+    # Reject empty landing shells / login barriers returned by SPAs
+    for shell in JUNK_SHELL_PATTERNS:
+        if shell in lower:
+            return True
+
+    return False
+
+
+def clean_extracted_text(text: Optional[str]) -> str:
+    """
+    Cleans out markdown boilerplate (such as Title:, URL Source:, Markdown Content:)
+    and navigation footer noise, preserving the clean conversation text.
+    """
+    if not text or not isinstance(text, str):
+        return ""
+
+    lines = text.splitlines()
+    cleaned_lines: List[str] = []
+    header_mode = True
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Strip metadata boilerplate headers produced by Jina Reader
+        if header_mode:
+            if (
+                stripped.startswith("Title:")
+                or stripped.startswith("URL Source:")
+                or stripped.startswith("Published Time:")
+            ):
+                continue
+            if stripped.startswith("Markdown Content:"):
+                header_mode = False
+                continue
+            if not stripped:
+                continue
+            # First non-header line ends header mode
+            header_mode = False
+
+        # Filter out common markdown navigation/shell noise
+        lower_line = stripped.lower()
+        if lower_line in (
+            "[skip to content]",
+            "[log in]",
+            "[sign up]",
+            "terms & privacy policy",
+            "terms",
+            "privacy policy",
+            "terms of service",
+            "[back to top]",
+            "learn more",
+            "stay logged out",
+        ):
+            continue
+
+        cleaned_lines.append(line)
+
+    result = "\n".join(cleaned_lines).strip()
+    # Normalize excessive blank lines (3+ consecutive newlines to 2)
+    result = re.sub(r"\n{3,}", "\n\n", result)
+    return result
 
 
 def validate_any_http_url(url: str) -> str:
     """
     Universal URL validator: accepts any valid HTTP/HTTPS URL.
-    Returns detected platform or domain name.
+    Returns detected platform or formatted domain name.
     """
-    if not url or not isinstance(url, str):
+    if not url or not isinstance(url, str) or not url.strip():
         raise ValueError("Please provide a valid URL string.")
 
     cleaned = url.strip()
     parsed = urlparse(cleaned)
+
+    if not parsed.scheme:
+        first_segment = cleaned.split("/")[0]
+        if "." in first_segment and not first_segment.startswith("."):
+            cleaned = "https://" + cleaned
+            parsed = urlparse(cleaned)
+        else:
+            raise ValueError("Invalid URL format. Please enter a valid web link starting with http:// or https://")
 
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         raise ValueError("Invalid URL format. Please enter a valid web link starting with http:// or https://")
 
     domain = parsed.netloc.lower()
     if "chatgpt.com" in domain or "openai.com" in domain:
+        if "/c/" in parsed.path:
+            raise ValueError(
+                "This is a private ChatGPT chat URL (/c/...). "
+                "Private chats cannot be fetched without being logged in. "
+                "To create a public share link in ChatGPT: click the Share icon -> 'Create link', "
+                "or use 'Paste from Clipboard' to paste the conversation directly."
+            )
         return "ChatGPT"
+
     if "gemini.google.com" in domain or "share.gemini.google" in domain or "g.co" in domain:
         if "/app/" in parsed.path:
             raise ValueError(
                 "This is a private Gemini chat URL (/app/...). "
                 "Private chats cannot be fetched without being logged in. "
                 "To create a public share link in Gemini: click the Share icon -> 'Share' -> 'Create public link', "
-                "or click 'Manual Paste' to paste the conversation directly."
+                "or use 'Paste from Clipboard' to paste the conversation directly."
             )
         return "Gemini"
+
     if "claude.ai" in domain or "anthropic.com" in domain:
         return "Claude"
     if "perplexity.ai" in domain:
@@ -126,7 +207,7 @@ def validate_any_http_url(url: str) -> str:
     if "huggingface.co" in domain:
         return "HuggingFace"
 
-    # Default to formatted domain name (e.g., example.com)
+    # Default to formatted domain name (e.g. example.com)
     return domain.replace("www.", "")
 
 
@@ -134,21 +215,26 @@ def extract_bulk_inner_text(html_content: str) -> str:
     """
     Universal bulk visible text extraction (innerText equivalent).
     Handles modern SSR frameworks (React Router / Remix streaming payloads,
-    Next.js __NEXT_DATA__, JSON-LD) and generic DOM visible text.
+    Next.js __NEXT_DATA__, Gemini DOM components) and generic DOM visible text.
     """
     soup = BeautifulSoup(html_content, "html.parser")
 
     # Fast-path for Gemini conversational elements if rendered in DOM
     gemini_bubbles = []
-    for tag in soup.find_all(lambda t: (
-        t.name in ("model-response", "user-query", "message-content")
-        or any(c in ("model-response", "user-query", "message-content", "query-text", "response-content") for c in t.get("class", []))
-    )):
+    for tag in soup.find_all(
+        lambda t: (
+            t.name in ("model-response", "user-query", "message-content")
+            or any(
+                c in ("model-response", "user-query", "message-content", "query-text", "response-content")
+                for c in t.get("class", [])
+            )
+        )
+    ):
         txt = tag.get_text(separator="\n", strip=True)
         if txt and txt not in gemini_bubbles:
             gemini_bubbles.append(txt)
     if gemini_bubbles:
-        return "\n\n---\n\n".join(gemini_bubbles)
+        return clean_extracted_text("\n\n---\n\n".join(gemini_bubbles))
 
     # 1. Fast-path for React Router / Remix streaming SSR apps (ChatGPT's current architecture)
     for s in soup.find_all("script"):
@@ -194,7 +280,7 @@ def extract_bulk_inner_text(html_content: str) -> str:
                                 seen.add(r)
                                 unique_responses.append(r)
                         if unique_responses:
-                            return "\n\n---\n\n".join(unique_responses)
+                            return clean_extracted_text("\n\n---\n\n".join(unique_responses))
             except Exception:
                 pass
 
@@ -220,26 +306,29 @@ def extract_bulk_inner_text(html_content: str) -> str:
                             if text_parts:
                                 responses.append("\n\n".join(text_parts).strip())
                 if responses:
-                    return "\n\n---\n\n".join(responses)
+                    return clean_extracted_text("\n\n---\n\n".join(responses))
         except Exception:
             pass
 
-    # Universal DOM strip of non-visible / script / style elements
-    for el in soup.find_all(["script", "style", "noscript", "svg", "header", "footer", "nav", "meta", "link", "bard-sidenav", "chat-notifications"]):
+    # Universal DOM strip of non-visible / script / style / nav / header elements
+    for el in soup.find_all([
+        "script", "style", "noscript", "svg", "header", "footer", "nav",
+        "meta", "link", "bard-sidenav", "chat-notifications"
+    ]):
         el.decompose()
 
-    # Extract all text using line break separator
-    target = soup.body if soup.body else soup
-    text = target.get_text(separator="\n", strip=True)
+    # Prefer <article> or <main> container if present for cleaner conversation content
+    target_container = soup.find("article") or soup.find("main") or (soup.body if soup.body else soup)
+    text = target_container.get_text(separator="\n", strip=True)
 
-    # Normalize excessive newlines
+    # Normalize lines
     cleaned_lines = []
     for line in text.splitlines():
         trimmed = line.strip()
         if trimmed:
             cleaned_lines.append(trimmed)
 
-    # Filter out empty Google Gemini SPA / sign-in boilerplate
+    # Filter out empty Google Gemini and ChatGPT SPA / sign-in boilerplate
     gemini_shell_phrases = {
         "gemini - direct access to google ai",
         "sign in",
@@ -254,116 +343,186 @@ def extract_bulk_inner_text(html_content: str) -> str:
         "link doesn't exist",
         "the link might have been deleted or not entered correctly.",
     }
-    meaningful_lines = [l for l in cleaned_lines if l.lower() not in gemini_shell_phrases]
-    if len(meaningful_lines) < 2 and any(l.lower() in gemini_shell_phrases for l in cleaned_lines):
-        # The entire content is just Google's unauthenticated login or error shell
+    chatgpt_shell_phrases = {
+        "skip to content",
+        "what's on the agenda today?",
+        "what’s on the agenda today?",
+        "chatgpt is ai. by using it, you agree to our",
+        "chats may be reviewed and used to improve our ai models.",
+        "conversation has been deleted. start a new chat.",
+        "conversation has been deleted",
+        "share not found",
+        "terms & privacy policy",
+        "terms",
+        "privacy policy",
+        "learn more",
+        "log in",
+        "sign up",
+        "stay logged out",
+        "get started for free or download the app.",
+    }
+    meaningful_lines = [
+        l for l in cleaned_lines
+        if l.lower() not in gemini_shell_phrases and l.lower() not in chatgpt_shell_phrases
+    ]
+    if len(meaningful_lines) < 2 and any(
+        (l.lower() in gemini_shell_phrases or l.lower() in chatgpt_shell_phrases) for l in cleaned_lines
+    ):
         return ""
 
     raw_result = "\n\n".join(meaningful_lines) if meaningful_lines else "\n\n".join(cleaned_lines)
-    if len(raw_result.split()) >= 3:
-        return raw_result
+    cleaned_result = clean_extracted_text(raw_result)
+    if len(cleaned_result.split()) >= 3:
+        return cleaned_result
 
     # Fallback to OpenGraph / Meta Description if visible body text is minimal
-    og_desc = (
-        soup.find("meta", property="og:description")
-        or soup.find("meta", attrs={"name": "description"})
-    )
+    og_desc = soup.find("meta", property="og:description") or soup.find("meta", attrs={"name": "description"})
     if og_desc and og_desc.get("content"):
         content = og_desc["content"].strip()
         if len(content.split()) >= 3 and "created with gemini" not in content.lower():
-            return content
+            return clean_extracted_text(content)
 
-    return raw_result
+    return cleaned_result
+
+
+async def attempt_jina_reader(target_url: str) -> Optional[str]:
+    """
+    Attempt 2A: Jina Browser Engine
+    Requests https://r.jina.ai/{target_url} using httpx.AsyncClient with browser engine headers.
+    """
+    jina_endpoint = f"https://r.jina.ai/{target_url}"
+    headers = {
+        "X-Engine": "browser",
+        "X-Return-Format": "text",
+        "X-Timeout": "30",
+        "Accept": "text/plain",
+        "User-Agent": BROWSER_HEADERS["User-Agent"],
+    }
+    try:
+        async with httpx.AsyncClient(headers=headers, timeout=25.0, follow_redirects=True) as client:
+            resp = await client.get(jina_endpoint)
+            if resp.status_code == 200 and resp.text:
+                cleaned = clean_extracted_text(resp.text)
+                if not is_antibot_or_junk(cleaned):
+                    return cleaned
+    except Exception as e:
+        logger.debug(f"Attempt 2A (Jina Browser Engine) error for {target_url}: {e}")
+    return None
+
+
+async def attempt_scraper_api(target_url: str, api_key: str) -> Optional[str]:
+    """
+    Attempt 2B: Residential Proxy API Fallback
+    Routes request through ScraperAPI with render=true&premium=true and parses visible text with BeautifulSoup.
+    """
+    endpoint = (
+        f"http://api.scraperapi.com?api_key={api_key}&url={target_url}&render=true&premium=true"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=35.0, follow_redirects=True) as client:
+            resp = await client.get(endpoint)
+            if resp.status_code == 200 and resp.text:
+                extracted = extract_bulk_inner_text(resp.text)
+                cleaned = clean_extracted_text(extracted)
+                if not is_antibot_or_junk(cleaned):
+                    return cleaned
+    except Exception as e:
+        logger.debug(f"Attempt 2B (ScraperAPI Proxy) error for {target_url}: {e}")
+    return None
+
+
+async def attempt_direct_ssr(target_url: str) -> Optional[str]:
+    """
+    Attempt 2C: Direct SSR Hydration Parse
+    Fetches URL with realistic Chrome User-Agent and Sec-Ch-Ua headers,
+    extracting embedded JSON hydration payloads or visible article/main text.
+    """
+    try:
+        async with httpx.AsyncClient(
+            headers=BROWSER_HEADERS,
+            timeout=15.0,
+            follow_redirects=True,
+        ) as client:
+            resp = await client.get(target_url)
+
+            # Check for ChatGPT share_not_found redirect
+            if "share_not_found" in str(resp.url):
+                return None
+
+            if resp.status_code == 200 and resp.text:
+                lower_html = resp.text.lower()
+                if (
+                    "conversation has been deleted" in lower_html
+                    or "share_not_found" in lower_html
+                    or "the conversation you are looking for doesn't exist" in lower_html
+                ):
+                    return None
+
+                extracted = extract_bulk_inner_text(resp.text)
+                cleaned = clean_extracted_text(extracted)
+                if not is_antibot_or_junk(cleaned):
+                    return cleaned
+    except Exception as e:
+        logger.debug(f"Attempt 2C (Direct SSR Parse) error for {target_url}: {e}")
+    return None
 
 
 async def extract_chat_link(url: str) -> Dict[str, Any]:
     """
-    Universal, unrestricted background text extractor.
-    Accepts any HTTP/HTTPS URL and extracts all visible text payload.
+    Multi-Tier Cloud Extraction Service (FastAPI Backend Cascade):
+    - Attempt 2A: Jina Browser Engine (r.jina.ai with X-Engine: browser)
+    - Attempt 2B: Residential Proxy API Fallback (ScraperAPI if SCRAPER_API_KEY is configured)
+    - Attempt 2C: Direct SSR Hydration Parse (Realistic Chrome headers + JSON hydration / DOM parsing)
+    Validates output through Anti-Bot & Junk Content Filter before returning.
     """
     platform = validate_any_http_url(url)
     cleaned_url = url.strip()
+    if not cleaned_url.startswith("http://") and not cleaned_url.startswith("https://"):
+        cleaned_url = "https://" + cleaned_url
 
-    try:
-        async with httpx.AsyncClient(
-            headers=BROWSER_HEADERS,
-            follow_redirects=True,
-            timeout=15.0,
-        ) as client:
-            response = await client.get(cleaned_url)
+    extracted_text: Optional[str] = None
+    extraction_tier: str = "unknown"
 
-    except httpx.TimeoutException:
-        raise ValueError(
-            f"The request timed out while connecting to {platform}. "
-            "Please copy and paste the chat text directly into the editor."
-        )
-    except httpx.RequestError as exc:
-        raise ValueError(
-            f"Could not connect to {platform}: {str(exc)}. "
-            "Please check the URL or copy and paste the text manually."
-        )
+    # Attempt 2A: Jina Browser Engine
+    extracted_text = await attempt_jina_reader(cleaned_url)
+    if extracted_text:
+        extraction_tier = "jina_browser"
 
-    # Check status codes
-    if response.status_code == 404:
-        raise ValueError(
-            f"This link was not found on {platform} (HTTP 404). "
-            "The page may have been deleted, expired, or entered incorrectly. "
-            "Please copy and paste the text manually."
-        )
-    if response.status_code in (401, 403):
-        raise ValueError(
-            f"Access to this page on {platform} is restricted or private (HTTP {response.status_code}). "
-            "Please copy and paste the text manually."
-        )
-    if response.status_code >= 400:
-        raise ValueError(
-            f"{platform} returned HTTP {response.status_code}. "
-            "Please copy and paste the text manually."
-        )
+    # Attempt 2B: Residential Proxy API Fallback (if SCRAPER_API_KEY is configured)
+    if not extracted_text:
+        scraper_api_key = os.environ.get("SCRAPER_API_KEY", "").strip()
+        if scraper_api_key:
+            extracted_text = await attempt_scraper_api(cleaned_url, scraper_api_key)
+            if extracted_text:
+                extraction_tier = "scraper_api_proxy"
 
-    # Check for ChatGPT share_not_found redirect
-    if "share_not_found" in str(response.url):
-        raise ValueError(
-            f"This shared {platform} link was not found or has expired. "
-            "The conversation may have been deleted or unshared. "
-            "Please copy and paste the chat response directly into the editor."
-        )
+    # Attempt 2C: Direct SSR Hydration Parse
+    if not extracted_text:
+        extracted_text = await attempt_direct_ssr(cleaned_url)
+        if extracted_text:
+            extraction_tier = "direct_ssr"
 
-    html_content = response.text
-
-    # Extract universal bulk visible text
-    extracted_text = extract_bulk_inner_text(html_content)
-
-    # If static extraction yielded nothing (common for client-rendered SPAs like Gemini),
-    # attempt dynamic hydration via system headless browser
-    if (not extracted_text or platform == "Gemini") and len(extracted_text.split()) < 10:
-        rendered_html = await render_with_headless_browser(cleaned_url)
-        if rendered_html:
-            # Check specifically for Gemini "Link doesn't exist" or expired link
-            if "link doesn't exist" in rendered_html.lower() or "deleted or not entered correctly" in rendered_html.lower():
-                raise ValueError(
-                    f"This {platform} share link does not exist or has expired on Google's servers. "
-                    "The shared conversation may have been deleted, unshared, or entered incorrectly. "
-                    "Please copy the chat text and use 'Manual Paste'."
-                )
-            hydrated_text = extract_bulk_inner_text(rendered_html)
-            if hydrated_text and len(hydrated_text.split()) >= 3:
-                extracted_text = hydrated_text
-
-    if not extracted_text or len(extracted_text.split()) < 3:
+    # If all tiers failed or were blocked
+    if not extracted_text or is_antibot_or_junk(extracted_text):
         if platform == "Gemini":
             raise ValueError(
                 "Could not extract conversation from this Gemini link. "
-                "Google Gemini share links often require logging in, or the link may be private/expired. "
-                "Please open the chat in Gemini, copy the text, and use 'Manual Paste'."
+                "Google Gemini share links often require logging in or are protected by verification. "
+                "Please copy the chat text and use 'Paste from Clipboard'."
+            )
+        if platform == "ChatGPT":
+            raise ValueError(
+                "Could not extract conversation from this ChatGPT link. "
+                "The conversation may be private, expired, or protected by Cloudflare verification. "
+                "Please copy the chat text and use 'Paste from Clipboard'."
             )
         raise ValueError(
-            f"No visible text could be extracted from {platform}. "
-            "The page may require authentication, JavaScript rendering, or is empty. "
-            "Please copy and paste the text directly into the editor."
+            f"Unable to extract text from this {platform} link. "
+            "The link is protected by Cloudflare anti-bot verification or requires account login. "
+            "Please copy the conversation and use 'Paste from Clipboard'."
         )
 
-    warnings = []
+    warnings: List[str] = []
     if len(extracted_text) > MAX_TEXT_CHARS:
         extracted_text = extracted_text[:MAX_TEXT_CHARS]
         warnings.append(

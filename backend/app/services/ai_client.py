@@ -1,6 +1,9 @@
 import os
 from typing import Optional, Tuple
-from openai import OpenAI
+try:
+    from openai import OpenAI
+except ImportError:
+    OpenAI = None
 
 def _normalize_gemini_model(model_name: Optional[str]) -> str:
     valid_env = os.getenv("GEMINI_MODEL") or "gemini-2.5-flash"
@@ -30,6 +33,9 @@ def get_ai_client(
     Returns an OpenAI client instance configured for Google Gemini or OpenAI,
     along with the model identifier to use.
     """
+    if OpenAI is None:
+        raise RuntimeError("openai package is not installed. Please install openai or use heuristic humanizer.")
+
     env_gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     env_openai_key = os.getenv("OPENAI_API_KEY")
 

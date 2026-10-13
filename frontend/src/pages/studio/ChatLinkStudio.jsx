@@ -4,31 +4,151 @@ import {
   Sparkles,
   LoaderCircle,
   AlertCircle,
-  Copy,
+  Clipboard,
   Check,
-  ExternalLink,
-  Info,
   X,
-  Zap,
+  ShieldAlert,
 } from 'lucide-react';
 import StudioWorkspace from '../../components/StudioWorkspace';
 import { useHumanizeStudio } from '../../utils/useHumanizeStudio';
 import { fetchChatLink, humanizeText } from '../../services/api';
 
+// Known anti-bot and CAPTCHA challenge phrases
+const ANTIBOT_PATTERNS = [
+  /just a moment\.\.\./i,
+  /enable javascript and cookies to continue/i,
+  /verify you are human/i,
+  /attention required!\s*\|\s*cloudflare/i,
+  /checking your browser before accessing/i,
+  /cloudflare ray id/i,
+  /please turn javascript on and reload the page/i,
+  /please verify that you are not a robot/i,
+  /cf-turnstile/i,
+  /cf-browser-verification/i,
+  /access denied/i,
+  /security check to continue/i,
+  /log in to get answers/i,
+  /what's on your mind today\?/i,
+  /what’s on your mind today\?/i,
+  /what's on the agenda today\?/i,
+  /sign up for free/i,
+  /get responses tailored to you/i,
+  /see plans and pricing/i,
+  /gemini - direct access to google ai/i,
+  /link doesn't exist/i,
+  /conversation has been deleted/i,
+  /share not found/i,
+  /stay logged out/i,
+];
+
+// Validates that extracted payload is meaningful and not a challenge page
+function isAntiBotOrJunk(text) {
+  if (!text || typeof text !== 'string') return true;
+  const trimmed = text.trim();
+  if (trimmed.length < 40) return true;
+  return ANTIBOT_PATTERNS.some((pattern) => pattern.test(trimmed));
+}
+
+// Cleans out Jina Reader metadata headers and navigation/footer boilerplate
+function cleanMarkdownBoilerplate(text) {
+  if (!text || typeof text !== 'string') return '';
+  const lines = text.split('\n');
+  const cleanedLines = [];
+  let headerMode = true;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (headerMode) {
+      if (
+        trimmed.startsWith('Title:') ||
+        trimmed.startsWith('URL Source:') ||
+        trimmed.startsWith('Published Time:')
+      ) {
+        continue;
+      }
+      if (trimmed.startsWith('Markdown Content:')) {
+        headerMode = false;
+        continue;
+      }
+      if (!trimmed) continue;
+      headerMode = false;
+    }
+
+    const lower = trimmed.toLowerCase();
+    if (
+      lower === '[skip to content]' ||
+      lower === '[log in]' ||
+      lower === '[sign up]' ||
+      lower === 'terms & privacy policy' ||
+      lower === 'terms' ||
+      lower === 'privacy policy' ||
+      lower === 'terms of service' ||
+      lower === '[back to top]' ||
+      lower === 'learn more' ||
+      lower === 'stay logged out'
+    ) {
+      continue;
+    }
+
+    cleanedLines.push(line);
+  }
+
+  return cleanedLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+// Stage 1: Client-Side Jina Reader Fetch
+async function fetchStage1ClientJina(targetUrl) {
+  const jinaUrl = `https://r.jina.ai/${encodeURIComponent(targetUrl)}`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+  try {
+    const res = await fetch(jinaUrl, {
+      method: 'GET',
+      headers: {
+        Accept: 'text/plain',
+        'X-Return-Format': 'text',
+        'X-No-Cache': 'true',
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      return { success: false, reason: `HTTP ${res.status}` };
+    }
+
+    const rawText = await res.text();
+    const clean = cleanMarkdownBoilerplate(rawText);
+
+    if (isAntiBotOrJunk(clean)) {
+      return { success: false, reason: 'Anti-bot challenge or junk payload detected' };
+    }
+
+    return { success: true, text: clean };
+  } catch (err) {
+    clearTimeout(timeoutId);
+    return {
+      success: false,
+      reason: err.name === 'AbortError' ? 'Direct fetch timed out' : (err.message || 'CORS / Network Error'),
+    };
+  }
+}
 
 export default function ChatLinkStudio() {
   const studio = useHumanizeStudio('General Professional Writing', 'Natural');
   const [chatUrl, setChatUrl] = useState('');
   const [isFetching, setIsFetching] = useState(false);
   const [fetchProgress, setFetchProgress] = useState('');
-  const [toast, setToast] = useState(null); // { type: 'error' | 'success', title: string, message: string }
+  const [toast, setToast] = useState(null); // { type: 'error' | 'success', title: string, message: string, showClipboard?: boolean }
+  const [blockedNotice, setBlockedNotice] = useState(null); // { platform: string, reason: string }
   const [autoRefine, setAutoRefine] = useState(true);
   const [detectedPlatform, setDetectedPlatform] = useState(null);
   const inputId = useId();
 
-  // Show a non-intrusive, graceful floating toast
-  const showToast = (type, title, message) => {
-    setToast({ type, title, message });
+  const showToast = (type, title, message, showClipboard = false) => {
+    setToast({ type, title, message, showClipboard });
     if (type === 'success') {
       setTimeout(() => setToast(null), 5000);
     }
@@ -52,13 +172,74 @@ export default function ChatLinkStudio() {
     setToast(null);
   };
 
-  // Detect platform as user types (for visual pill badge)
+  // 1-Click Clipboard Fallback: reads clipboard directly into input editor and triggers humanization
+  const handlePasteFromClipboard = async () => {
+    try {
+      if (!navigator?.clipboard?.readText) {
+        throw new Error('Clipboard API is not supported in this browser.');
+      }
+      const text = await navigator.clipboard.readText();
+      const clean = text?.trim();
+      if (!clean) {
+        showToast(
+          'error',
+          'Clipboard Empty',
+          'No text was found on your clipboard. Please copy your AI conversation text first, then click "Paste from Clipboard".'
+        );
+        return;
+      }
+
+      studio.setInput(clean);
+      setBlockedNotice(null);
+      setToast(null);
+
+      showToast(
+        'success',
+        'Pasted from Clipboard',
+        `Ingested ${clean.split(/\s+/).length} words from clipboard. Starting natural humanization...`
+      );
+
+      // Automatically trigger refinement if enabled
+      if (autoRefine) {
+        setFetchProgress('Triggering natural humanization pipeline...');
+        setTimeout(async () => {
+          try {
+            studio.setBusy(true);
+            const result = await humanizeText({
+              text: clean,
+              context: studio.context,
+              tone: studio.tone,
+              minimal_rewrite: studio.minimal,
+            });
+            studio.setOutput(result.humanized_text);
+            studio.setResult(result);
+          } catch (err) {
+            studio.setError(
+              err.message || 'Text pasted, but refinement failed. Click "Humanize text" below to retry.'
+            );
+          } finally {
+            studio.setBusy(false);
+            setFetchProgress('');
+          }
+        }, 150);
+      }
+    } catch {
+      showToast(
+        'error',
+        'Clipboard Access Denied',
+        'Browser permissions blocked automatic clipboard reading. Please click inside the editor and press Ctrl+V to paste manually.'
+      );
+      handleFocusEditor();
+    }
+  };
+
+  // Platform detection for visual pill badge
   const handleUrlChange = (val) => {
     setChatUrl(val);
     const clean = val.trim().toLowerCase();
     if (clean.includes('chatgpt.com') || clean.includes('openai.com')) {
       setDetectedPlatform('ChatGPT');
-    } else if (clean.includes('gemini.google.com') || clean.includes('g.co')) {
+    } else if (clean.includes('gemini.google.com') || clean.includes('g.co') || clean.includes('share.gemini.google')) {
       setDetectedPlatform('Gemini');
     } else if (clean.includes('claude.ai') || clean.includes('anthropic.com')) {
       setDetectedPlatform('Claude');
@@ -66,12 +247,16 @@ export default function ChatLinkStudio() {
       setDetectedPlatform('Perplexity');
     } else if (clean.includes('deepseek.com')) {
       setDetectedPlatform('DeepSeek');
+    } else if (clean.includes('huggingface.co')) {
+      setDetectedPlatform('HuggingFace');
+    } else if (clean.includes('youtube.com') || clean.includes('youtu.be')) {
+      setDetectedPlatform('YouTube');
     } else {
       setDetectedPlatform(null);
     }
   };
 
-  // Main fetch action (universal unrestricted extraction)
+  // Main 3-Tier Multi-Extraction Action
   async function handleFetchChat(urlOverride) {
     let targetUrl = (typeof urlOverride === 'string' ? urlOverride : chatUrl).trim();
 
@@ -79,12 +264,12 @@ export default function ChatLinkStudio() {
       showToast(
         'error',
         'Link Required',
-        'Please enter a URL to extract text from.'
+        'Please enter an AI chat share link to extract conversation text.'
       );
       return;
     }
 
-    // Ensure URL has protocol
+    // Auto-prefix https:// if protocol is omitted
     if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
       targetUrl = 'https://' + targetUrl;
     }
@@ -94,57 +279,113 @@ export default function ChatLinkStudio() {
     } catch {
       showToast(
         'error',
-        'Invalid URL',
-        'Please enter a valid web URL (e.g. https://chatgpt.com/... or https://claude.ai/...).'
+        'Invalid URL Format',
+        'Please enter a valid web URL (e.g. https://chatgpt.com/share/... or https://claude.ai/share/...).'
+      );
+      return;
+    }
+
+    const lowerTarget = targetUrl.toLowerCase();
+    if (lowerTarget.includes('youtube.com') || lowerTarget.includes('youtu.be')) {
+      showToast(
+        'info',
+        'YouTube Video Detected',
+        'You entered a YouTube link! Please switch to the "YouTube Link" tab above for complete transcript extraction.'
       );
       return;
     }
 
     setToast(null);
+    setBlockedNotice(null);
     studio.setError('');
     studio.setNotice('');
     studio.setOutput('');
     studio.setResult(null);
     setIsFetching(true);
-    setFetchProgress('Fetching text...');
 
-    try {
-      const data = await fetchChatLink(targetUrl);
-      const extracted = data.extracted_text || '';
+    let extractedText = '';
+    let resolvedPlatform = detectedPlatform || 'AI Chat';
 
-      if (!extracted.trim()) {
-        throw new Error('No visible text could be extracted from this URL.');
+    // ─────────────────────────────────────────────────────────────
+    // STAGE 1: Client-Side Jina Reader Fetch
+    // ─────────────────────────────────────────────────────────────
+    setFetchProgress('Stage 1: Attempting client-side cloud reader fetch...');
+    const stage1Result = await fetchStage1ClientJina(targetUrl);
+
+    if (stage1Result.success && stage1Result.text) {
+      extractedText = stage1Result.text;
+    } else {
+      // ─────────────────────────────────────────────────────────────
+      // STAGE 2: Backend Fallback Cascade (FastAPI Route)
+      // Attempt 2A: Jina Browser Engine
+      // Attempt 2B: Residential Proxy API Fallback (SCRAPER_API_KEY)
+      // Attempt 2C: Direct SSR Hydration Parse
+      // ─────────────────────────────────────────────────────────────
+      setFetchProgress('Stage 2: Client fetch restricted. Cascading through cloud backend extraction...');
+      try {
+        const backendData = await fetchChatLink(targetUrl);
+        const rawBackendText = backendData.extracted_text || '';
+        const cleanedBackendText = cleanMarkdownBoilerplate(rawBackendText);
+
+        if (!cleanedBackendText || isAntiBotOrJunk(cleanedBackendText)) {
+          throw new Error(
+            'The extracted content failed anti-bot validation or was blocked by Cloudflare verification.'
+          );
+        }
+
+        extractedText = cleanedBackendText;
+        if (backendData.platform) {
+          resolvedPlatform = backendData.platform;
+          setDetectedPlatform(backendData.platform);
+        }
+        if (backendData.warnings?.length) {
+          studio.setNotice(backendData.warnings.join(' '));
+        }
+      } catch (backendError) {
+        const errMessage = backendError.message || 'Extraction failed across all cloud tiers.';
+        const isBlocked =
+          /cloudflare|captcha|anti-bot|protect|login|private|verify|restricted|permission/i.test(errMessage);
+
+        setBlockedNotice({
+          platform: resolvedPlatform,
+          reason: errMessage,
+          isBlocked,
+        });
+
+        showToast(
+          'error',
+          'Cloud Extraction Blocked',
+          `${errMessage} Click "Paste from Clipboard" to instantly load your copied conversation.`,
+          true
+        );
+        setIsFetching(false);
+        setFetchProgress('');
+        return;
       }
+    }
 
-      // Automatically inject the text into the primary text studio editor
-      studio.setInput(extracted);
-
-      const platformName = data.platform || detectedPlatform || 'Web Source';
-      setDetectedPlatform(platformName);
-
+    // ─────────────────────────────────────────────────────────────
+    // TASK 4: Seamless UI Handoff & Auto-Refinement
+    // ─────────────────────────────────────────────────────────────
+    try {
+      studio.setInput(extractedText);
       showToast(
         'success',
-        `${platformName} Text Ingested`,
-        `Extracted ${data.word_count || extracted.split(/\s+/).length} words. Ready to humanize.`
+        `${resolvedPlatform} Text Ingested`,
+        `Extracted ${extractedText.split(/\s+/).length} words. Ready to humanize.`
       );
 
-      if (data.warnings?.length) {
-        studio.setNotice(data.warnings.join(' '));
-      }
-
-      // Automatically trigger refinement pipeline if auto-refine is enabled
       if (autoRefine) {
         setFetchProgress('Triggering natural humanization pipeline...');
         setTimeout(async () => {
           try {
             studio.setBusy(true);
             const result = await humanizeText({
-              text: extracted,
+              text: extractedText,
               context: studio.context,
               tone: studio.tone,
               minimal_rewrite: studio.minimal,
             });
-
             studio.setOutput(result.humanized_text);
             studio.setResult(result);
           } catch (err) {
@@ -156,26 +397,17 @@ export default function ChatLinkStudio() {
           }
         }, 150);
       }
-    } catch (e) {
-      const errorMsg = e.message || 'Could not fetch text from this URL.';
-      studio.setError('');
-      showToast(
-        'error',
-        'Could Not Extract Chat',
-        `${errorMsg} Please manually copy and paste the chat text directly into the editor.`
-      );
     } finally {
       setIsFetching(false);
       setFetchProgress('');
     }
   }
 
-
   // Pre-fill sample shared links for testing and demos
   const handleUseSample = (type) => {
     let sample = '';
     if (type === 'chatgpt') {
-      sample = 'https://chatgpt.com/share/6703b41e-abcd-8001-9002-1234567890ab';
+      sample = 'https://chatgpt.com/s/t_6894038bb3d481919f367e49f310d1ca';
     } else {
       sample = 'https://gemini.google.com/share/9876543210ab';
     }
@@ -183,10 +415,10 @@ export default function ChatLinkStudio() {
     handleUrlChange(sample);
   };
 
-  // Top ingest card slot matching the visual language of YouTube and Media studios
+  // Top ingest slot component
   const chatLinkSlot = (
     <div className="chatlink-panel">
-      {/* Toast Notification Error/Success Boundary */}
+      {/* Toast Notification Error/Success Boundary with 1-Click Clipboard Fallback */}
       {toast && (
         <div className={`chatlink-toast ${toast.type}`} role="alert">
           <div className="toast-icon">
@@ -197,13 +429,14 @@ export default function ChatLinkStudio() {
             <span className="toast-message">{toast.message}</span>
           </div>
           <div className="toast-actions">
-            {toast.type === 'error' && (
+            {toast.showClipboard && (
               <button
                 type="button"
                 className="toast-action-btn"
-                onClick={handleFocusEditor}
+                onClick={handlePasteFromClipboard}
+                title="Read text from clipboard and start humanization"
               >
-                ✍️ Paste Manually
+                📋 Paste from Clipboard
               </button>
             )}
             <button
@@ -213,6 +446,41 @@ export default function ChatLinkStudio() {
               aria-label="Dismiss notification"
             >
               <X size={15} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Prominent Non-Technical Blocked Notice Card (CAPTCHA / Cloudflare fallback) */}
+      {blockedNotice && (
+        <div className="chatlink-blocked-notice" role="alert">
+          <div className="chatlink-blocked-content">
+            <ShieldAlert size={20} className="chatlink-blocked-icon" />
+            <div className="chatlink-blocked-text">
+              <span className="chatlink-blocked-title">
+                {blockedNotice.platform} Link Protected by Cloudflare / Security Check
+              </span>
+              <span className="chatlink-blocked-desc">
+                Public web scrapers cannot bypass this link's CAPTCHA challenge or login gate.
+                Copy the text from your chat tab, then click the button below to paste in one click.
+              </span>
+            </div>
+          </div>
+          <div className="chatlink-blocked-actions">
+            <button
+              type="button"
+              className="chatlink-blocked-paste-btn"
+              onClick={handlePasteFromClipboard}
+            >
+              <Clipboard size={14} /> Paste from Clipboard
+            </button>
+            <button
+              type="button"
+              className="toast-close-btn"
+              onClick={() => setBlockedNotice(null)}
+              aria-label="Dismiss notice"
+            >
+              <X size={14} />
             </button>
           </div>
         </div>
@@ -229,7 +497,7 @@ export default function ChatLinkStudio() {
             id={inputId}
             type="url"
             className="chatlink-url-input"
-            placeholder="Paste ChatGPT, Gemini, Claude, or any AI chat URL..."
+            placeholder="Paste any ChatGPT, Gemini, Claude, or AI share URL (http:// or https://)..."
             value={chatUrl}
             onChange={(e) => handleUrlChange(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && !isFetching && handleFetchChat()}
@@ -244,11 +512,11 @@ export default function ChatLinkStudio() {
 
         <button
           type="button"
-          className="button secondary manual-paste-btn"
-          onClick={handleFocusEditor}
-          title="Directly paste conversation text into the editor"
+          className="button secondary chatlink-clipboard-btn"
+          onClick={handlePasteFromClipboard}
+          title="Directly paste from clipboard and refine with 1 click"
         >
-          ✍️ Manual Paste
+          <Clipboard size={14} /> Paste from Clipboard
         </button>
 
         <button
@@ -272,18 +540,27 @@ export default function ChatLinkStudio() {
       {/* Sub-bar with samples & pipeline options */}
       <div className="chatlink-subbar">
         <div className="chatlink-hints">
+          <span className="hint-label">Test with verified samples:</span>
+          <button
+            type="button"
+            className="domain-chip sample-chip"
+            onClick={() => handleUseSample('chatgpt')}
+            title="Click to test with a verified live ChatGPT share link"
+          >
+            🐾 ChatGPT Live Sample
+          </button>
           <span className="hint-label">Universal:</span>
-          <span className="domain-chip">ChatGPT</span>
-          <span className="domain-chip">Gemini</span>
-          <span className="domain-chip">Claude</span>
-          <span className="domain-chip">Perplexity</span>
-          <span className="domain-chip">Any Web URL</span>
+          <span className="domain-chip">chatgpt.com/share/*</span>
+          <span className="domain-chip">chatgpt.com/s/*</span>
+          <span className="domain-chip">gemini.google.com/share/*</span>
+          <span className="domain-chip">claude.ai/share/*</span>
         </div>
 
-
-
         <div className="chatlink-toggles">
-          <label className="auto-refine-label" title="Automatically trigger natural refinement when text is fetched">
+          <label
+            className="auto-refine-label"
+            title="Automatically trigger natural refinement when text is fetched"
+          >
             <input
               type="checkbox"
               checked={autoRefine}
@@ -294,12 +571,12 @@ export default function ChatLinkStudio() {
         </div>
       </div>
 
-      {/* Robust Loading State: Skeleton Loader & Spinner Bar */}
+      {/* Loading State: Skeleton Loader & Multi-Tier Status */}
       {isFetching && (
         <div className="chatlink-loading-state" role="status">
           <div className="loading-spinner-row">
             <LoaderCircle className="spin" size={18} />
-            <span className="loading-text">{fetchProgress || 'Fetching AI chat responses...'}</span>
+            <span className="loading-text">{fetchProgress || 'Extracting conversation text...'}</span>
           </div>
 
           <div className="skeleton-loader-card">
@@ -335,11 +612,12 @@ export default function ChatLinkStudio() {
         setChatUrl('');
         setDetectedPlatform(null);
         setToast(null);
+        setBlockedNotice(null);
         studio.clearAll();
       }}
       topSlot={chatLinkSlot}
       inputTitle="AI Chat Transcript Preview"
-      placeholder="Paste a ChatGPT or Gemini shared link above and click 'Fetch Chat' to automatically ingest AI responses into the editor…"
+      placeholder="Paste any ChatGPT, Gemini, or Claude share link above and click 'Fetch Chat' to ingest, or use 'Paste from Clipboard'…"
     />
   );
 }

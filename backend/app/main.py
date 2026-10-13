@@ -45,6 +45,7 @@ def root():
 def health():
     return {"status": "ok"}
 
+@app.post("/analyze-robotic")
 @app.post("/api/analyze-robotic")
 def analyze_robotic(req: AnalyzeRequest):
     """Analyze text for robotic phrasing clichés and sentence regularity."""
@@ -53,6 +54,7 @@ def analyze_robotic(req: AnalyzeRequest):
         return RoboticAnalysis().dict()
     return analyze_robotic_language(text)
 
+@app.post("/extract-document")
 @app.post("/api/extract-document")
 async def extract(file: UploadFile = File(...)):
     data = await file.read(5 * 1024 * 1024 + 1)
@@ -61,6 +63,7 @@ async def extract(file: UploadFile = File(...)):
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
+@app.post("/extract-media")
 @app.post("/api/extract-media")
 async def extract_media(file: UploadFile = File(...)):
     data = await file.read(MAX_MEDIA_BYTES + 1)
@@ -71,6 +74,7 @@ async def extract_media(file: UploadFile = File(...)):
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
+@app.post("/extract-youtube")
 @app.post("/api/extract-youtube")
 def extract_yt(req: YouTubeExtractRequest):
     try:
@@ -78,6 +82,8 @@ def extract_yt(req: YouTubeExtractRequest):
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
+@app.post("/fetch-ai-link", response_model=ChatLinkExtractResponse)
+@app.post("/fetch-chat-link", response_model=ChatLinkExtractResponse)
 @app.post("/api/fetch-ai-link", response_model=ChatLinkExtractResponse)
 @app.post("/api/fetch-chat-link", response_model=ChatLinkExtractResponse)
 async def fetch_chat_link(req: ChatLinkExtractRequest):
@@ -88,6 +94,7 @@ async def fetch_chat_link(req: ChatLinkExtractRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch chat link: {str(e)}")
 
+@app.post("/humanize")
 @app.post("/api/humanize")
 def process(req: HumanizeRequest):
     text = req.text.strip()

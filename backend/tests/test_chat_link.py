@@ -6,6 +6,11 @@ from app.services.chat_link_extractor import (
     validate_any_http_url,
     extract_bulk_inner_text,
     extract_chat_link,
+    is_antibot_or_junk,
+    clean_extracted_text,
+    attempt_jina_reader,
+    attempt_scraper_api,
+    attempt_direct_ssr,
 )
 
 client = TestClient(app)
@@ -185,4 +190,99 @@ def test_api_fetch_ai_link_endpoint():
         data = resp.json()
         assert data["platform"] == "ChatGPT"
         assert data["extracted_text"] == "Universal AI chat transcript text."
+
+
+def test_antibot_filter_rejections():
+    # Reject short payloads (< 40 characters)
+    assert is_antibot_or_junk("Short string") is True
+    assert is_antibot_or_junk("") is True
+    assert is_antibot_or_junk(None) is True
+
+    # Reject Cloudflare / anti-bot challenges
+    cf_sample = "Just a moment... Enable JavaScript and cookies to continue. Cloudflare Ray ID: 8f293b1."
+    assert is_antibot_or_junk(cf_sample) is True
+
+    captcha_sample = "Attention Required! | Cloudflare. Verify you are human before proceeding to access the site."
+    assert is_antibot_or_junk(captcha_sample) is True
+
+    # Valid conversation text should pass
+    valid_text = (
+        "Candidate demonstrates exceptional React architecture skills and deep knowledge of asynchronous state management."
+    )
+    assert is_antibot_or_junk(valid_text) is False
+
+
+def test_clean_extracted_text_markdown_boilerplate():
+    raw_jina = """Title: Candidate Performance Review - Claude Shared Chat
+URL Source: https://claude.ai/share/12345
+Published Time: 2026-10-10
+
+Markdown Content:
+[Skip to content]
+
+Here is the comprehensive evaluation of John Doe's software development abilities.
+He excels in Python distributed backend engineering and database optimization.
+
+[Terms & Privacy Policy]
+[Back to top]
+"""
+    cleaned = clean_extracted_text(raw_jina)
+    assert "Title:" not in cleaned
+    assert "URL Source:" not in cleaned
+    assert "Markdown Content:" not in cleaned
+    assert "[Skip to content]" not in cleaned
+    assert "[Back to top]" not in cleaned
+    assert "comprehensive evaluation of John Doe" in cleaned
+    assert "distributed backend engineering" in cleaned
+
+
+@pytest.mark.anyio
+async def test_multi_tier_cascade_jina_first():
+    with patch("app.services.chat_link_extractor.attempt_jina_reader", new_callable=AsyncMock) as mock_jina:
+        mock_jina.return_value = "Candidate demonstrated exceptional performance during the system design rounds."
+
+        res = await extract_chat_link("https://chatgpt.com/share/abc-123")
+        assert res["platform"] == "ChatGPT"
+        assert "Candidate demonstrated exceptional" in res["extracted_text"]
+        assert mock_jina.called
+
+
+@pytest.mark.anyio
+async def test_multi_tier_cascade_scraper_api_fallback(monkeypatch):
+    monkeypatch.setenv("SCRAPER_API_KEY", "test-key-123")
+    with patch("app.services.chat_link_extractor.attempt_jina_reader", new_callable=AsyncMock) as mock_jina, \
+         patch("app.services.chat_link_extractor.attempt_scraper_api", new_callable=AsyncMock) as mock_scraper:
+        # Jina returns None (blocked or failed)
+        mock_jina.return_value = None
+        mock_scraper.return_value = "ScraperAPI successfully bypassed residential anti-bot challenges with valid text."
+
+        res = await extract_chat_link("https://gemini.google.com/share/xyz-999")
+        assert res["platform"] == "Gemini"
+        assert "bypassed residential anti-bot" in res["extracted_text"]
+        assert mock_scraper.called
+
+
+@pytest.mark.anyio
+async def test_multi_tier_cascade_direct_ssr_fallback():
+    with patch("app.services.chat_link_extractor.attempt_jina_reader", new_callable=AsyncMock) as mock_jina, \
+         patch("app.services.chat_link_extractor.attempt_direct_ssr", new_callable=AsyncMock) as mock_ssr:
+        # Jina fails, ScraperAPI has no key configured
+        mock_jina.return_value = None
+        mock_ssr.return_value = "Direct SSR fallback parsed server-rendered conversation text successfully."
+
+        res = await extract_chat_link("https://claude.ai/share/claude-456")
+        assert res["platform"] == "Claude"
+        assert "Direct SSR fallback parsed" in res["extracted_text"]
+        assert mock_ssr.called
+
+
+@pytest.mark.anyio
+async def test_all_tiers_blocked_raises_clear_guidance():
+    with patch("app.services.chat_link_extractor.attempt_jina_reader", new_callable=AsyncMock) as mock_jina, \
+         patch("app.services.chat_link_extractor.attempt_direct_ssr", new_callable=AsyncMock) as mock_ssr:
+        mock_jina.return_value = None
+        mock_ssr.return_value = None
+
+        with pytest.raises(ValueError, match="Paste from Clipboard"):
+            await extract_chat_link("https://chatgpt.com/share/blocked-chat")
 
