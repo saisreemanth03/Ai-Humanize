@@ -97,43 +97,50 @@ function cleanMarkdownBoilerplate(text) {
   return cleanedLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-// Stage 1: Client-Side Jina Reader Fetch
+// Stage 1: Client-Side Jina Reader Fetch (with Cloud Browser Engine)
 async function fetchStage1ClientJina(targetUrl) {
-  const jinaUrl = `https://r.jina.ai/${encodeURIComponent(targetUrl)}`;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 12000);
+  const headers = {
+    Accept: 'text/plain',
+    'X-Return-Format': 'text',
+    'X-Engine': 'browser',
+    'X-Timeout': '30',
+    'X-No-Cache': 'true',
+  };
 
-  try {
-    const res = await fetch(jinaUrl, {
-      method: 'GET',
-      headers: {
-        Accept: 'text/plain',
-        'X-Return-Format': 'text',
-        'X-No-Cache': 'true',
-      },
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
+  const urlsToTry = [
+    `https://r.jina.ai/${targetUrl}`,
+    `https://r.jina.ai/${encodeURIComponent(targetUrl)}`,
+  ];
 
-    if (!res.ok) {
-      return { success: false, reason: `HTTP ${res.status}` };
+  for (const jinaUrl of urlsToTry) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 28000);
+
+    try {
+      const res = await fetch(jinaUrl, {
+        method: 'GET',
+        headers,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const rawText = await res.text();
+        const clean = cleanMarkdownBoilerplate(rawText);
+
+        if (!isAntiBotOrJunk(clean)) {
+          return { success: true, text: clean };
+        }
+      }
+    } catch {
+      clearTimeout(timeoutId);
     }
-
-    const rawText = await res.text();
-    const clean = cleanMarkdownBoilerplate(rawText);
-
-    if (isAntiBotOrJunk(clean)) {
-      return { success: false, reason: 'Anti-bot challenge or junk payload detected' };
-    }
-
-    return { success: true, text: clean };
-  } catch (err) {
-    clearTimeout(timeoutId);
-    return {
-      success: false,
-      reason: err.name === 'AbortError' ? 'Direct fetch timed out' : (err.message || 'CORS / Network Error'),
-    };
   }
+
+  return {
+    success: false,
+    reason: 'Client cloud fetch was restricted or link requires authentication',
+  };
 }
 
 export default function ChatLinkStudio() {
@@ -342,20 +349,22 @@ export default function ChatLinkStudio() {
           studio.setNotice(backendData.warnings.join(' '));
         }
       } catch (backendError) {
-        const errMessage = backendError.message || 'Extraction failed across all cloud tiers.';
-        const isBlocked =
-          /cloudflare|captcha|anti-bot|protect|login|private|verify|restricted|permission/i.test(errMessage);
+        const rawErr = backendError?.message || '';
+        const userFriendlyMessage =
+          rawErr.includes('404') || rawErr.includes('not found') || rawErr.includes('Could not reach')
+            ? 'This shared chat link is not publicly available, has expired, or requires OpenAI login authentication.'
+            : rawErr;
 
         setBlockedNotice({
           platform: resolvedPlatform,
-          reason: errMessage,
-          isBlocked,
+          reason: userFriendlyMessage,
+          isBlocked: true,
         });
 
         showToast(
           'error',
-          'Cloud Extraction Blocked',
-          `${errMessage} Click "Paste from Clipboard" to instantly load your copied conversation.`,
+          'Could Not Extract Chat',
+          `${userFriendlyMessage} Click "Paste from Clipboard" to load your conversation with 1 click.`,
           true
         );
         setIsFetching(false);
