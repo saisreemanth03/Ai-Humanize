@@ -1,7 +1,10 @@
 import os
+import json
+import asyncio
 from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.schemas import (
     HumanizeRequest,
@@ -13,7 +16,7 @@ from app.schemas import (
     ChatLinkExtractRequest,
     ChatLinkExtractResponse,
 )
-from app.services.humanizer import humanize, correct_missing_entities
+from app.services.humanizer import humanize, correct_missing_entities, humanize_stream
 from app.services.validator import validate, deterministic_validation_fallback
 from app.services.document_extractor import extract_document, MAX_TEXT_CHARS
 from app.services.media_extractor import extract_media_file, extract_youtube, MAX_MEDIA_BYTES
@@ -242,6 +245,124 @@ def process(req: HumanizeRequest):
         _put_in_cache(cache_key, response_payload)
 
     return response_payload
+
+@app.post("/humanize-stream")
+@app.post("/api/humanize-stream")
+async def process_stream(req: HumanizeRequest):
+    text = req.text.strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="Enter some text before humanizing.")
+    if len(text) > MAX_TEXT_CHARS:
+        raise HTTPException(status_code=413, detail="Text is limited to 20,000 characters.")
+
+    cache_key = (text, req.context, req.tone, req.minimal_rewrite, req.provider, req.model)
+
+    async def event_generator():
+        # Instant cache return for repeated queries
+        if not req.api_key:
+            cached = _get_from_cache(cache_key)
+            if cached:
+                yield cached["humanized_text"]
+                yield f"\n\n___METADATA___:{json.dumps(cached)}"
+                return
+
+        accumulated_chunks = []
+        # Phase 1 (Instant): Stream text chunks directly as generated
+        try:
+            async for chunk in humanize_stream(
+                text,
+                req.context,
+                req.tone,
+                req.minimal_rewrite,
+                api_key=req.api_key,
+                provider=req.provider,
+                model_override=req.model
+            ):
+                accumulated_chunks.append(chunk)
+                yield chunk
+        except Exception:
+            from app.utils.heuristic_humanizer import heuristic_humanize
+            fallback = heuristic_humanize(text, req.context, req.tone, req.minimal_rewrite)
+            txt = fallback["humanized_text"]
+            accumulated_chunks.append(txt)
+            yield txt
+
+        final_text = "".join(accumulated_chunks).strip()
+        if not final_text:
+            final_text = text
+
+        # Phase 2 (Background/Tail-End): Concurrently trigger entity checks, robotic analysis, and verification
+        async def run_entity_and_robotic():
+            audit = detailed_entity_audit(text, final_text)
+            robotic = analyze_robotic_language(text, final_text)
+            raw_warn = list(compare_entities(text, final_text))
+            extracted = extract_entities(text)
+            return audit, robotic, raw_warn, extracted
+
+        async def run_verification():
+            return validate(
+                text,
+                final_text,
+                api_key=req.api_key,
+                provider=req.provider,
+                model_override=req.model,
+                deep_validation=False
+            )
+
+        (audit, robotic, raw_warn, extracted), validation = await asyncio.gather(
+            run_entity_and_robotic(),
+            run_verification()
+        )
+
+        meaning = {k: validation[k] for k in ("meaning_status", "meaning_explanation", "changed_facts", "added_claims", "omitted_claims", "review_warnings")}
+        factuality = {k: validation[k] for k in ("factuality_status", "factuality_explanation", "changed_facts", "added_claims", "omitted_claims", "review_warnings")}
+        
+        all_warnings = list(raw_warn) + list(validation.get("review_warnings", []))
+        if all_warnings:
+            if meaning["meaning_status"] == "Passed":
+                meaning["meaning_status"] = "Review recommended"
+            if factuality["factuality_status"] == "Passed":
+                factuality["factuality_status"] = "Review recommended"
+        all_warnings.append("Automated checks can miss errors and do not verify claims against external sources. Review important content.")
+
+        meaning_preserved = bool(validation.get("meaning_preserved", True) and audit["is_100_percent_preserved"])
+        unsupported_claims_detected = bool(validation.get("unsupported_claims_detected", False) or bool(validation.get("added_claims", [])))
+        factuality_conf = int(validation.get("factuality_confidence", 98))
+        if not audit["is_100_percent_preserved"]:
+            factuality_conf = min(factuality_conf, int(audit["preservation_rate"]))
+
+        metadata_payload = {
+            "humanized_text": final_text,
+            "changes_summary": "Naturally refined for human cadence and flow while preserving entities and meaning.",
+            "extracted_entities": extracted,
+            "meaning_validation": meaning,
+            "factuality_validation": factuality,
+            "warnings": list(dict.fromkeys(all_warnings)),
+            "meaning_preserved": meaning_preserved,
+            "entities_preserved": audit["entities_preserved"],
+            "unsupported_claims_detected": unsupported_claims_detected,
+            "factuality_confidence": factuality_conf,
+            "preserved_terms": audit["entities_preserved"],
+            "semantic_similarity_score": int(validation.get("semantic_similarity_score", 95)),
+            "robotic_analysis": robotic,
+            "entity_guardrail": audit
+        }
+
+        if not req.api_key:
+            _put_in_cache(cache_key, metadata_payload)
+
+        # Phase 3 (Completion): Special chunk containing Pass 2 metadata
+        yield f"\n\n___METADATA___:{json.dumps(metadata_payload)}"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/plain; charset=utf-8",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 @app.post("/api/humanize-document")
 async def humanize_document(file: UploadFile = File(...), context: str = "General Professional Writing", tone: str = "Natural", minimal_rewrite: bool = False):

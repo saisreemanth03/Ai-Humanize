@@ -213,11 +213,15 @@ export default function ChatLinkStudio() {
         (async () => {
           try {
             studio.setBusy(true);
+            studio.setOutput('');
+            studio.setResult(null);
             const result = await humanizeText({
               text: clean,
               context: studio.context,
               tone: studio.tone,
               minimal_rewrite: studio.minimal,
+            }, (chunkText) => {
+              studio.setOutput(chunkText);
             });
             studio.setOutput(result.humanized_text);
             studio.setResult(result);
@@ -390,11 +394,15 @@ export default function ChatLinkStudio() {
         (async () => {
           try {
             studio.setBusy(true);
+            studio.setOutput('');
+            studio.setResult(null);
             const result = await humanizeText({
               text: extractedText,
               context: studio.context,
               tone: studio.tone,
               minimal_rewrite: studio.minimal,
+            }, (chunkText) => {
+              studio.setOutput(chunkText);
             });
             studio.setOutput(result.humanized_text);
             studio.setResult(result);

@@ -22,13 +22,20 @@ export function useHumanizeStudio(defaultContext = CONTEXTS[0], defaultTone = TO
     setBusy(true);
     setError('');
     setNotice('');
+    setOutput('');
+    setResult(null);
     try {
-      const data = await humanizeText({
-        text: input,
-        context,
-        tone,
-        minimal_rewrite: minimal
-      });
+      const data = await humanizeText(
+        {
+          text: input,
+          context,
+          tone,
+          minimal_rewrite: minimal
+        },
+        (chunkText) => {
+          setOutput(chunkText);
+        }
+      );
       setOutput(data.humanized_text);
       setResult(data);
     } catch (e) {

@@ -1,7 +1,8 @@
 import json
-from typing import Optional
-from app.prompts import SYSTEM_PROMPT, CORRECTION_PROMPT
-from app.services.ai_client import get_ai_client
+import asyncio
+from typing import Optional, AsyncGenerator
+from app.prompts import SYSTEM_PROMPT, CORRECTION_PROMPT, STREAM_SYSTEM_PROMPT
+from app.services.ai_client import get_ai_client, get_async_ai_client
 
 def _json_object(content: str) -> dict:
     try:
@@ -83,6 +84,84 @@ Task Requirements:
 
     if last_exc:
         raise last_exc
+
+
+async def humanize_stream(
+    text: str,
+    context: str,
+    tone: str,
+    minimal_rewrite: bool,
+    api_key: Optional[str] = None,
+    provider: Optional[str] = None,
+    model_override: Optional[str] = None
+) -> AsyncGenerator[str, None]:
+    """Streams rewritten humanized text token-by-token directly from LLM."""
+    try:
+        client, model = get_async_ai_client(custom_api_key=api_key, custom_provider=provider, custom_model=model_override)
+    except Exception:
+        # Fallback to local heuristic engine if AI is unconfigured
+        from app.utils.heuristic_humanizer import heuristic_humanize
+        res = heuristic_humanize(text, context, tone, minimal_rewrite)
+        words = res["humanized_text"].split(" ")
+        for i, word in enumerate(words):
+            yield word + (" " if i < len(words) - 1 else "")
+            await asyncio.sleep(0.005)
+        return
+
+    rewrite_mode_str = (
+        "Minimal Surgical Rewrite: Preserve original sentence structure, length, and boundaries strictly. Only replace robotic cliches and awkward words."
+        if minimal_rewrite else
+        "Full Dynamic Humanization: Actively restructure robotic sentences, vary pacing and cadence, and eliminate formulaic AI patterns into natural human voice."
+    )
+
+    user_prompt = f"""Tone Preset: {tone}
+Rewrite Mode: {rewrite_mode_str}
+Domain Context: {context}
+
+Original Text to Refine:
+\"\"\"{text}\"\"\"
+
+Task:
+Refine the original text into natural human voice adhering strictly to the '{tone}' tone preset and the '{rewrite_mode_str}'. Preserve 100% of all numbers, entities, metrics, dates, and technical tools. Output ONLY the refined human text directly.
+"""
+
+    candidate_models = [model]
+    if not model_override and not api_key and ("gemini" in model.lower() or "flash" in model.lower()):
+        for backup in ["gemini-2.5-flash", "gemini-3.1-flash-lite", "gemini-3.5-flash-lite"]:
+            if backup not in candidate_models:
+                candidate_models.append(backup)
+
+    stream_started = False
+    for candidate in candidate_models:
+        try:
+            response = await client.chat.completions.create(
+                model=candidate,
+                stream=True,
+                messages=[
+                    {"role": "system", "content": STREAM_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt}
+                ]
+            )
+            async for chunk in response:
+                delta = chunk.choices[0].delta.content if chunk.choices and chunk.choices[0].delta else None
+                if delta:
+                    stream_started = True
+                    yield delta
+            return
+        except Exception:
+            if not stream_started and candidate != candidate_models[-1]:
+                continue
+            break
+
+    # If all candidates failed or timed out before streaming, fallback to local heuristic
+    if not stream_started:
+        from app.utils.heuristic_humanizer import heuristic_humanize
+        res = heuristic_humanize(text, context, tone, minimal_rewrite)
+        words = res["humanized_text"].split(" ")
+        for i, word in enumerate(words):
+            yield word + (" " if i < len(words) - 1 else "")
+            await asyncio.sleep(0.005)
+        return
 
 
 def correct_missing_entities(
