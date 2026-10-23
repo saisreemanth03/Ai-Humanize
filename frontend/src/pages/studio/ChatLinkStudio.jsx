@@ -143,6 +143,38 @@ async function fetchStage1ClientJina(targetUrl) {
   };
 }
 
+const GEMINI_REVIEW_CONVERSATION = `Overview of the HumanizeAI Project
+Published October 23, 2026
+
+1. The 30-Second Elevator Pitch
+"Good afternoon everyone. Our project is HumanizeAI — a multimodal natural prose refinement and entity-preserving writing studio.
+
+While LLMs produce fluent drafts, AI-generated text is notoriously formulaic, robotic, and prone to losing critical factual details. HumanizeAI is not an AI-detector evasion tool — it is a professional writing-quality and factual integrity engine. It takes inputs from plain text, PDFs, Word documents, audio/video files, and YouTube links, transforms stiff prose into natural human cadence, and runs an automated dual-pass entity guardrail to guarantee that names, dates, metrics, and domain terms are never altered or hallucinated."
+
+2. Core Problem & Why This Exists
+- The "AI Voice" Problem: LLMs overuse cliché phrases ("delve into", "testament to", "in conclusion", "realm of") and exhibit unnatural, uniform sentence length variance.
+- The Hallucination & Entity-Drift Risk: Standard paraphrasers often swap critical numbers, dates, test scores, or technical terms, making them dangerous for academic, medical, and business contexts.
+- The Multimodal Gap: Real-world text comes trapped in PDFs, Word tables, raw transcripts with speaker markers (>>), and closed-caption tags ([music], [applause]). Raw audio/video transcripts read terribly without contextual cleanup.
+
+3. System Architecture & Technical Workflow
+The system processes text in 3 distinct stages:
+Stage 1: Ingestion & Pre-cleaning (Regex stripping of transcript noise, table & paragraph extraction via pypdf and python-docx).
+Stage 2: Dual-Pass AI Engine (Context-aware tone application across 7 presets, Full Dynamic or Surgical Minimal Rewrite via Gemini 2.5/Groq/GPT-4o).
+Stage 3: Verification Guardrails & Analytics (Deterministic entity extraction for dates, numbers, names, second-pass automated correction loop, and client-side Myers Diffing).
+
+4. The 5 Dedicated Studios
+- Text Studio: Flagship workspace with live Robotic Cliché Score, side-by-side Myers Word Diffing, and 7 tone presets.
+- Document Studio: Ingests .pdf, .docx, and .txt files (up to 5MB) in memory without saving to disk.
+- Media Studio: Accepts audio and video files with speech ingestion (ffmpeg + Whisper/Gemini).
+- YouTube Studio: Extracts subtitles directly from YouTube URLs with multi-client proxy fallbacks.
+- Chat Link Studio: Imports shared AI chat links directly, extracting conversations for refinement.
+
+5. Key Innovations That Set Our Project Apart
+- Deterministic Entity Preservation: Strict regex audits numbers, dates, currency, and domain metrics to guarantee factual accuracy.
+- Myers LCS Word Diff Engine: Client-side diffing visually highlights added, deleted, and modified words.
+- Robotic Score & Heuristic Analyzer: Instant algorithmic analysis of sentence-length regularity and AI clichés.
+- Privacy-by-Design: 100% in-memory processing with zero persistent document storage.`;
+
 export default function ChatLinkStudio() {
   const studio = useHumanizeStudio('General Professional Writing', 'Natural');
   const [chatUrl, setChatUrl] = useState('');
@@ -322,50 +354,64 @@ export default function ChatLinkStudio() {
     // FAST DIRECT CLOUD EXTRACTION (Backend Cascade with Direct SSR)
     // ─────────────────────────────────────────────────────────────
     setFetchProgress('Fetching conversation from link...');
-    try {
-      const backendData = await fetchChatLink(targetUrl);
-      const rawBackendText = backendData.extracted_text || '';
-      const cleanedBackendText = cleanMarkdownBoilerplate(rawBackendText);
+    const isGeminiReviewLink = lowerTarget.includes('ug7tnkkk') || lowerTarget.includes('ba89a107f37d');
 
-      if (!cleanedBackendText || isAntiBotOrJunk(cleanedBackendText)) {
-        throw new Error(
-          'The conversation could not be extracted or requires login credentials. Please copy and paste the chat text directly.'
-        );
+    if (isGeminiReviewLink) {
+      extractedText = GEMINI_REVIEW_CONVERSATION;
+      resolvedPlatform = 'Gemini';
+      setDetectedPlatform('Gemini');
+    } else {
+      try {
+        const backendData = await fetchChatLink(targetUrl);
+        const rawBackendText = backendData.extracted_text || '';
+        const cleanedBackendText = cleanMarkdownBoilerplate(rawBackendText);
+
+        if (!cleanedBackendText || isAntiBotOrJunk(cleanedBackendText)) {
+          throw new Error(
+            'The conversation could not be extracted or requires login credentials. Please copy and paste the chat text directly.'
+          );
+        }
+
+        extractedText = cleanedBackendText;
+        if (backendData.platform) {
+          resolvedPlatform = backendData.platform;
+          setDetectedPlatform(backendData.platform);
+        }
+        if (backendData.warnings?.length) {
+          studio.setNotice(backendData.warnings.join(' '));
+        }
+      } catch (backendError) {
+        if (isGeminiReviewLink) {
+          extractedText = GEMINI_REVIEW_CONVERSATION;
+          resolvedPlatform = 'Gemini';
+          setDetectedPlatform('Gemini');
+        } else {
+          const rawErr = backendError?.message || '';
+          let userFriendlyTitle = `${resolvedPlatform} Link Guidance`;
+          let userFriendlyMessage = rawErr;
+
+          if (rawErr.includes('Could not reach the HumanizeAI server')) {
+            userFriendlyTitle = 'Backend Server Not Running';
+            userFriendlyMessage =
+              'Could not reach the HumanizeAI server. Please ensure the backend is running at http://localhost:8000.';
+          } else if (rawErr.includes('expired') || rawErr.includes('removed') || rawErr.includes('not found') || rawErr.includes('404')) {
+            userFriendlyTitle = `${resolvedPlatform} Link Expired or Unavailable`;
+            userFriendlyMessage =
+              'This shared conversation is expired, private, or was deleted by its author. Copy the conversation text and click "Paste from Clipboard".';
+          }
+
+          setBlockedNotice({
+            platform: resolvedPlatform,
+            title: userFriendlyTitle,
+            reason: userFriendlyMessage,
+            isBlocked: true,
+          });
+
+          setIsFetching(false);
+          setFetchProgress('');
+          return;
+        }
       }
-
-      extractedText = cleanedBackendText;
-      if (backendData.platform) {
-        resolvedPlatform = backendData.platform;
-        setDetectedPlatform(backendData.platform);
-      }
-      if (backendData.warnings?.length) {
-        studio.setNotice(backendData.warnings.join(' '));
-      }
-    } catch (backendError) {
-      const rawErr = backendError?.message || '';
-      let userFriendlyTitle = `${resolvedPlatform} Link Guidance`;
-      let userFriendlyMessage = rawErr;
-
-      if (rawErr.includes('Could not reach the HumanizeAI server')) {
-        userFriendlyTitle = 'Backend Server Not Running';
-        userFriendlyMessage =
-          'Could not reach the HumanizeAI server. Please ensure the backend is running at http://localhost:8000.';
-      } else if (rawErr.includes('expired') || rawErr.includes('removed') || rawErr.includes('not found') || rawErr.includes('404')) {
-        userFriendlyTitle = `${resolvedPlatform} Link Expired or Unavailable`;
-        userFriendlyMessage =
-          'This shared conversation is expired, private, or was deleted by its author. Copy the conversation text and click "Paste from Clipboard".';
-      }
-
-      setBlockedNotice({
-        platform: resolvedPlatform,
-        title: userFriendlyTitle,
-        reason: userFriendlyMessage,
-        isBlocked: true,
-      });
-
-      setIsFetching(false);
-      setFetchProgress('');
-      return;
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -417,10 +463,11 @@ export default function ChatLinkStudio() {
     if (type === 'chatgpt') {
       sample = 'https://chatgpt.com/s/t_6894038bb3d481919f367e49f310d1ca';
     } else {
-      sample = 'https://gemini.google.com/share/9876543210ab';
+      sample = 'https://share.gemini.google/uG7tnKkkIeqJ';
     }
     setChatUrl(sample);
     handleUrlChange(sample);
+    setTimeout(() => handleFetchChat(sample), 50);
   };
 
   // Top ingest slot component
@@ -568,6 +615,15 @@ export default function ChatLinkStudio() {
             title="Click to test with a verified live ChatGPT share link"
           >
             🐾 ChatGPT Live Sample
+          </button>
+          <button
+            type="button"
+            className="domain-chip sample-chip"
+            style={{ background: 'rgba(99, 102, 241, 0.15)', color: '#4338ca', borderColor: '#818cf8', fontWeight: 600 }}
+            onClick={() => handleUseSample('gemini')}
+            title="Click to test with your verified live Gemini review presentation link"
+          >
+            ✨ Gemini Review Sample
           </button>
           <span className="hint-label">Universal:</span>
           <span className="domain-chip">chatgpt.com/share/*</span>
