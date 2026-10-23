@@ -319,63 +319,53 @@ export default function ChatLinkStudio() {
     let resolvedPlatform = detectedPlatform || 'AI Chat';
 
     // ─────────────────────────────────────────────────────────────
-    // STAGE 1: Client-Side Jina Reader Fetch
+    // FAST DIRECT CLOUD EXTRACTION (Backend Cascade with Direct SSR)
     // ─────────────────────────────────────────────────────────────
-    setFetchProgress('Stage 1: Attempting client-side cloud reader fetch...');
-    const stage1Result = await fetchStage1ClientJina(targetUrl);
+    setFetchProgress('Fetching conversation from link...');
+    try {
+      const backendData = await fetchChatLink(targetUrl);
+      const rawBackendText = backendData.extracted_text || '';
+      const cleanedBackendText = cleanMarkdownBoilerplate(rawBackendText);
 
-    if (stage1Result.success && stage1Result.text) {
-      extractedText = stage1Result.text;
-    } else {
-      // ─────────────────────────────────────────────────────────────
-      // STAGE 2: Backend Fallback Cascade (FastAPI Route)
-      // Attempt 2A: Jina Browser Engine
-      // Attempt 2B: Residential Proxy API Fallback (SCRAPER_API_KEY)
-      // Attempt 2C: Direct SSR Hydration Parse
-      // ─────────────────────────────────────────────────────────────
-      setFetchProgress('Stage 2: Client fetch restricted. Cascading through cloud backend extraction...');
-      try {
-        const backendData = await fetchChatLink(targetUrl);
-        const rawBackendText = backendData.extracted_text || '';
-        const cleanedBackendText = cleanMarkdownBoilerplate(rawBackendText);
-
-        if (!cleanedBackendText || isAntiBotOrJunk(cleanedBackendText)) {
-          throw new Error(
-            'The extracted content failed anti-bot validation or was blocked by Cloudflare verification.'
-          );
-        }
-
-        extractedText = cleanedBackendText;
-        if (backendData.platform) {
-          resolvedPlatform = backendData.platform;
-          setDetectedPlatform(backendData.platform);
-        }
-        if (backendData.warnings?.length) {
-          studio.setNotice(backendData.warnings.join(' '));
-        }
-      } catch (backendError) {
-        const rawErr = backendError?.message || '';
-        const userFriendlyMessage =
-          rawErr.includes('404') || rawErr.includes('not found') || rawErr.includes('Could not reach')
-            ? 'This shared chat link is not publicly available, has expired, or requires OpenAI login authentication.'
-            : rawErr;
-
-        setBlockedNotice({
-          platform: resolvedPlatform,
-          reason: userFriendlyMessage,
-          isBlocked: true,
-        });
-
-        showToast(
-          'error',
-          'Could Not Extract Chat',
-          `${userFriendlyMessage} Click "Paste from Clipboard" to load your conversation with 1 click.`,
-          true
+      if (!cleanedBackendText || isAntiBotOrJunk(cleanedBackendText)) {
+        throw new Error(
+          'The conversation could not be extracted or requires login credentials. Please copy and paste the chat text directly.'
         );
-        setIsFetching(false);
-        setFetchProgress('');
-        return;
       }
+
+      extractedText = cleanedBackendText;
+      if (backendData.platform) {
+        resolvedPlatform = backendData.platform;
+        setDetectedPlatform(backendData.platform);
+      }
+      if (backendData.warnings?.length) {
+        studio.setNotice(backendData.warnings.join(' '));
+      }
+    } catch (backendError) {
+      const rawErr = backendError?.message || '';
+      let userFriendlyTitle = `${resolvedPlatform} Link Guidance`;
+      let userFriendlyMessage = rawErr;
+
+      if (rawErr.includes('Could not reach the HumanizeAI server')) {
+        userFriendlyTitle = 'Backend Server Not Running';
+        userFriendlyMessage =
+          'Could not reach the HumanizeAI server. Please ensure the backend is running at http://localhost:8000.';
+      } else if (rawErr.includes('expired') || rawErr.includes('removed') || rawErr.includes('not found') || rawErr.includes('404')) {
+        userFriendlyTitle = `${resolvedPlatform} Link Expired or Unavailable`;
+        userFriendlyMessage =
+          'This shared conversation is expired, private, or was deleted by its author. Copy the conversation text and click "Paste from Clipboard".';
+      }
+
+      setBlockedNotice({
+        platform: resolvedPlatform,
+        title: userFriendlyTitle,
+        reason: userFriendlyMessage,
+        isBlocked: true,
+      });
+
+      setIsFetching(false);
+      setFetchProgress('');
+      return;
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -469,18 +459,17 @@ export default function ChatLinkStudio() {
         </div>
       )}
 
-      {/* Prominent Non-Technical Blocked Notice Card (CAPTCHA / Cloudflare fallback) */}
+      {/* Prominent Guidance Notice Card */}
       {blockedNotice && (
         <div className="chatlink-blocked-notice" role="alert">
           <div className="chatlink-blocked-content">
             <ShieldAlert size={20} className="chatlink-blocked-icon" />
             <div className="chatlink-blocked-text">
               <span className="chatlink-blocked-title">
-                {blockedNotice.platform} Link Protected by Cloudflare / Security Check
+                {blockedNotice.title || `${blockedNotice.platform} Link Notice`}
               </span>
               <span className="chatlink-blocked-desc">
-                Public web scrapers cannot bypass this link's CAPTCHA challenge or login gate.
-                Copy the text from your chat tab, then click the button below to paste in one click.
+                {blockedNotice.reason}
               </span>
             </div>
           </div>

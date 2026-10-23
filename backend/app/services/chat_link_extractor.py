@@ -65,6 +65,10 @@ JUNK_SHELL_PATTERNS = [
     "link doesn't exist",
     "the link might have been deleted",
     "conversation has been deleted",
+    "can't load shared conversation",
+    "can’t load shared conversation",
+    "unable to load conversation",
+    "conversation not found",
     "share not found",
     "stay logged out",
     "chats may be reviewed and used to improve our ai models",
@@ -433,14 +437,14 @@ async def attempt_scraper_api(target_url: str, api_key: str) -> Optional[str]:
 
 async def attempt_direct_ssr(target_url: str) -> Optional[str]:
     """
-    Attempt 2C: Direct SSR Hydration Parse
-    Fetches URL with realistic Chrome User-Agent and Sec-Ch-Ua headers,
-    extracting embedded JSON hydration payloads or visible article/main text.
+    Direct SSR Hydration Parse
+    Fetches URL with realistic Chrome headers, extracting embedded React Router /
+    __NEXT_DATA__ JSON hydration payloads or clean DOM text.
     """
     try:
         async with httpx.AsyncClient(
             headers=BROWSER_HEADERS,
-            timeout=15.0,
+            timeout=8.0,
             follow_redirects=True,
         ) as client:
             resp = await client.get(target_url)
@@ -452,8 +456,10 @@ async def attempt_direct_ssr(target_url: str) -> Optional[str]:
             if resp.status_code == 200 and resp.text:
                 lower_html = resp.text.lower()
                 if (
-                    "conversation has been deleted" in lower_html
-                    or "share_not_found" in lower_html
+                    "can't load shared conversation" in lower_html
+                    or "can’t load shared conversation" in lower_html
+                    or "conversation has been deleted" in lower_html
+                    or "share not found" in lower_html
                     or "the conversation you are looking for doesn't exist" in lower_html
                 ):
                     return None
@@ -463,7 +469,7 @@ async def attempt_direct_ssr(target_url: str) -> Optional[str]:
                 if not is_antibot_or_junk(cleaned):
                     return cleaned
     except Exception as e:
-        logger.debug(f"Attempt 2C (Direct SSR Parse) error for {target_url}: {e}")
+        logger.debug(f"Direct SSR Parse error for {target_url}: {e}")
     return None
 
 
@@ -485,22 +491,28 @@ async def extract_chat_link(url: str) -> Dict[str, Any]:
 
     # Attempt 2A: Jina Browser Engine
     extracted_text = await attempt_jina_reader(cleaned_url)
-    if extracted_text:
+    if extracted_text and not is_antibot_or_junk(extracted_text):
         extraction_tier = "jina_browser"
+    else:
+        extracted_text = None
 
     # Attempt 2B: Residential Proxy API Fallback (if SCRAPER_API_KEY is configured)
     if not extracted_text:
         scraper_api_key = os.environ.get("SCRAPER_API_KEY", "").strip()
         if scraper_api_key:
             extracted_text = await attempt_scraper_api(cleaned_url, scraper_api_key)
-            if extracted_text:
+            if extracted_text and not is_antibot_or_junk(extracted_text):
                 extraction_tier = "scraper_api_proxy"
+            else:
+                extracted_text = None
 
     # Attempt 2C: Direct SSR Hydration Parse
     if not extracted_text:
         extracted_text = await attempt_direct_ssr(cleaned_url)
-        if extracted_text:
+        if extracted_text and not is_antibot_or_junk(extracted_text):
             extraction_tier = "direct_ssr"
+        else:
+            extracted_text = None
 
     # If all tiers failed or were blocked
     if not extracted_text or is_antibot_or_junk(extracted_text):
