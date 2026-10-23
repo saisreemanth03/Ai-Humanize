@@ -486,6 +486,20 @@ async def extract_chat_link(url: str) -> Dict[str, Any]:
     if not cleaned_url.startswith("http://") and not cleaned_url.startswith("https://"):
         cleaned_url = "https://" + cleaned_url
 
+    # Intelligent Auto-Correction for Gemini short-links (e.g. l vs I typographical confusion)
+    if "share.gemini.google" in cleaned_url and ("l" in cleaned_url or "I" in cleaned_url):
+        try:
+            parts = cleaned_url.split("/")
+            slug = parts[-1]
+            swapped = slug.replace("l", "I")
+            alt_url = "/".join(parts[:-1]) + "/" + swapped
+            with httpx.Client(timeout=3.0, follow_redirects=True) as check_client:
+                r_check = check_client.get(alt_url)
+                if r_check.status_code == 200:
+                    cleaned_url = alt_url
+        except Exception:
+            pass
+
     extracted_text: Optional[str] = None
     extraction_tier: str = "unknown"
 
