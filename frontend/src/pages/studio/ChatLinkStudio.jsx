@@ -483,6 +483,19 @@ export default function ChatLinkStudio() {
             </button>
             <button
               type="button"
+              className="chatlink-blocked-paste-btn"
+              style={{ background: '#7c3aed', color: '#ffffff', borderColor: '#7c3aed' }}
+              onClick={() => {
+                setBlockedNotice(null);
+                handleUseSample('chatgpt');
+                setTimeout(() => handleFetchChat('https://chatgpt.com/s/t_6894038bb3d481919f367e49f310d1ca'), 50);
+              }}
+              title="Instantly test extraction using an active verified public sample conversation"
+            >
+              <Sparkles size={14} /> Load Working Sample
+            </button>
+            <button
+              type="button"
               className="toast-close-btn"
               onClick={() => setBlockedNotice(null)}
               aria-label="Dismiss notice"
